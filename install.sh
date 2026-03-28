@@ -139,7 +139,8 @@ cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
 cp "$REPO_DIR/scripts/tts-stop.sh" "$SCRIPTS_DIR/tts-stop.sh"
 cp "$REPO_DIR/scripts/tts-chime.sh" "$SCRIPTS_DIR/tts-chime.sh"
 cp "$REPO_DIR/scripts/tts-log.sh" "$SCRIPTS_DIR/tts-log.sh"
-chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh"
+cp "$REPO_DIR/scripts/tts-karaoke.sh" "$SCRIPTS_DIR/tts-karaoke.sh"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh" "$SCRIPTS_DIR/tts-karaoke.sh"
 echo "  Hooks and scripts installed."
 
 # --- Create daemon (platform-specific) ---

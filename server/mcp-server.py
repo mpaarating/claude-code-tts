@@ -115,6 +115,20 @@ def _speak(text, voice=None, speed=None, mode=None, agent=None):
         return {"success": False, "error": str(e)}
 
 
+def _speak_karaoke(text):
+    """Launch the karaoke script for word-highlighted playback."""
+    karaoke_script = os.path.join(os.path.expanduser("~"), ".claude", "scripts", "tts-karaoke.sh")
+    if not os.path.isfile(karaoke_script):
+        return {"success": False, "error": "tts-karaoke.sh not found. Run install.sh first."}
+
+    subprocess.Popen(
+        ["bash", karaoke_script, text],
+        stdout=None, stderr=None,
+        start_new_session=True,
+    )
+    return {"success": True, "mode": "karaoke"}
+
+
 def _stop():
     """Stop any currently playing TTS audio."""
     result = subprocess.run(["pkill", "-f", "ffplay.*claude-tts"], capture_output=True)
@@ -163,6 +177,24 @@ TOOLS = [
         },
     },
     {
+        "name": "speak_karaoke",
+        "description": (
+            "Speak text with karaoke-style word highlighting in the terminal. "
+            "Shows the currently spoken word highlighted, advancing in sync with audio. "
+            "Use for longer explanations where visual tracking helps."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The text to speak with karaoke display.",
+                },
+            },
+            "required": ["text"],
+        },
+    },
+    {
         "name": "stop",
         "description": "Stop any currently playing TTS audio immediately.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -196,6 +228,8 @@ def handle_request(msg):
 
         if tool_name == "speak":
             result = _speak(args.get("text", ""), args.get("voice"), args.get("speed"), agent=args.get("agent"))
+        elif tool_name == "speak_karaoke":
+            result = _speak_karaoke(args.get("text", ""))
         elif tool_name == "stop":
             result = _stop()
         elif tool_name == "status":
