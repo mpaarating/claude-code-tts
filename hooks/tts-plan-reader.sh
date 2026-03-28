@@ -11,8 +11,8 @@ MAX_PLAN_CHARS=2000
 
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
 
-INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+HOOK_JSON=$(cat)
+TOOL_NAME=$(echo "$HOOK_JSON" | jq -r '.tool_name // empty' 2>/dev/null)
 
 [[ "$TOOL_NAME" != "ExitPlanMode" ]] && exit 0
 

@@ -32,6 +32,8 @@ if [[ -f "$LOCK_FILE" ]]; then
 fi
 
 # --- Classification: skip code-heavy responses ---
+# Responses that are mostly code aren't useful to hear — variable names
+# and syntax produce garbled speech. Better to stay silent.
 
 TOTAL_LINES=$(echo "$MESSAGE" | wc -l | tr -d ' ')
 CODE_LINES=$(echo "$MESSAGE" | awk '/^```/{inside=!inside; next} inside{count++} END{print count+0}')

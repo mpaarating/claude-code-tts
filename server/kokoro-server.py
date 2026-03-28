@@ -92,7 +92,7 @@ class TTSHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path in ("/speak", "/speak-long"):
+        if self.path == "/speak":
             self._handle_speak()
         else:
             self._send_error(404)
