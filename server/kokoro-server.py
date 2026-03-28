@@ -21,6 +21,7 @@ from preprocess import (
     should_speak,
     split_sentences,
     summarize,
+    voice_for_tone,
     MAX_CHUNK_LEN,
     INTER_CHUNK_SILENCE_SECS,
 )
@@ -109,12 +110,22 @@ class TTSHandler(BaseHTTPRequestHandler):
         if not text:
             return self._send_error(400)
 
-        voice = data.get("voice", VOICE)
-        speed = data.get("speed", SPEED)
+        voice = data.get("voice")
+        speed = data.get("speed")
         mode = data.get("mode")
 
         # Classify tone before preprocessing (needs raw text)
         tone = classify_tone(text)
+
+        # Apply tone-based voice/speed if caller didn't specify
+        if tone and (voice is None or speed is None):
+            tone_voice, tone_speed = voice_for_tone(tone)
+            if voice is None:
+                voice = tone_voice or VOICE
+            if speed is None:
+                speed = tone_speed or SPEED
+        voice = voice or VOICE
+        speed = speed or SPEED
 
         # In summary mode (auto-speak), check if the content is worth speaking
         # before doing any expensive TTS work. Code-heavy responses get rejected.

@@ -6,7 +6,7 @@ import os
 # Add server/ to path so we can import preprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 
-from preprocess import classify_tone, preprocess, should_speak, split_sentences, summarize
+from preprocess import classify_tone, preprocess, should_speak, split_sentences, summarize, voice_for_tone
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +334,35 @@ class TestClassifyTone:
     def test_empty(self):
         assert classify_tone("") is None
         assert classify_tone(None) is None
+
+
+# ---------------------------------------------------------------------------
+# voice_for_tone
+# ---------------------------------------------------------------------------
+
+class TestVoiceForTone:
+    def test_error_voice(self):
+        voice, speed = voice_for_tone("error")
+        assert voice == "am_adam"
+        assert speed == 0.9
+
+    def test_question_voice(self):
+        voice, speed = voice_for_tone("question")
+        assert voice == "af_bella"
+        assert speed == 1.05
+
+    def test_completion_voice(self):
+        voice, speed = voice_for_tone("completion")
+        assert voice == "af_heart"
+
+    def test_unknown_tone(self):
+        voice, speed = voice_for_tone("unknown")
+        assert voice is None
+        assert speed is None
+
+    def test_none_tone(self):
+        voice, speed = voice_for_tone(None)
+        assert voice is None
 
 
 # ---------------------------------------------------------------------------

@@ -332,6 +332,39 @@ def classify_tone(text):
     return None
 
 
+# Tone → voice/speed mapping. Used when no explicit voice is provided.
+# Configurable via pronunciation.json under "tone_voices".
+_BUILTIN_TONE_VOICES = {
+    "error":      {"voice": "am_adam",    "speed": 0.9},
+    "question":   {"voice": "af_bella",   "speed": 1.05},
+    "completion":  {"voice": "af_heart",  "speed": 1.0},
+    "warning":    {"voice": "am_adam",    "speed": 0.95},
+}
+
+
+def _load_tone_voices():
+    """Load tone→voice mapping from pronunciation.json if present."""
+    if os.path.isfile(_json_path):
+        try:
+            with open(_json_path, "r") as f:
+                data = json.load(f)
+            return data.get("tone_voices", _BUILTIN_TONE_VOICES)
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return _BUILTIN_TONE_VOICES
+
+
+TONE_VOICES = _load_tone_voices()
+
+
+def voice_for_tone(tone):
+    """Return (voice, speed) for a given tone, or (None, None) for default."""
+    if tone and tone in TONE_VOICES:
+        entry = TONE_VOICES[tone]
+        return entry.get("voice"), entry.get("speed")
+    return None, None
+
+
 def summarize(text):
     """Produce a short spoken summary: preprocess, take first few sentences, cap length.
 
