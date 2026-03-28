@@ -6,7 +6,7 @@ import os
 # Add server/ to path so we can import preprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 
-from preprocess import preprocess, split_sentences, summarize
+from preprocess import preprocess, should_speak, split_sentences, summarize
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +239,46 @@ class TestWhitespace:
     def test_empty_input(self):
         assert preprocess("") == ""
         assert preprocess("   ") == ""
+
+
+# ---------------------------------------------------------------------------
+# should_speak
+# ---------------------------------------------------------------------------
+
+class TestShouldSpeak:
+    def test_normal_text(self):
+        assert should_speak("Here is a normal response about your code.") is True
+
+    def test_too_short(self):
+        assert should_speak("OK") is False
+        assert should_speak("") is False
+        assert should_speak(None) is False
+
+    def test_code_heavy_response(self):
+        text = "Fix:\n```python\ndef foo():\n    pass\n\ndef bar():\n    pass\n\ndef baz():\n    return 1\n```"
+        assert should_speak(text) is False
+
+    def test_mixed_response_mostly_text(self):
+        text = (
+            "The issue is in the auth middleware.\n"
+            "It skips token validation on retry.\n"
+            "Here is the fix:\n"
+            "```python\nif token.expired: raise AuthError\n```\n"
+            "Let me know if that works.\n"
+            "I also checked the tests."
+        )
+        assert should_speak(text) is True
+
+    def test_exactly_at_threshold(self):
+        # 40% code is the threshold — at exactly 40%, should still speak
+        # 10 lines total, 4 code lines = 40%
+        lines = ["text"] * 4 + ["```"] + ["code"] * 4 + ["```"]
+        assert should_speak("\n".join(lines)) is True
+
+    def test_just_over_threshold(self):
+        # 5 code lines out of 10 = 50% > 40%
+        lines = ["text"] * 3 + ["```"] + ["code"] * 5 + ["```"]
+        assert should_speak("\n".join(lines)) is False
 
 
 # ---------------------------------------------------------------------------
