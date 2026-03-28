@@ -1,5 +1,9 @@
 # Claude Code TTS
 
+[![Tests](https://github.com/mpaarating/claude-code-tts/actions/workflows/test.yml/badge.svg)](https://github.com/mpaarating/claude-code-tts/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
 Local, free text-to-speech for [Claude Code](https://claude.ai/code). Hear responses instead of reading them.
 
 Uses [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) — an 82M parameter neural TTS model that runs entirely on your machine. No API keys, no cloud services, no cost.
