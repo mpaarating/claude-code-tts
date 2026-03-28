@@ -6,7 +6,7 @@ import os
 # Add server/ to path so we can import preprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 
-from preprocess import preprocess, should_speak, split_sentences, summarize
+from preprocess import classify_tone, preprocess, should_speak, split_sentences, summarize
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +303,37 @@ class TestShouldSpeak:
 
     def test_changes_committed(self):
         assert should_speak("Changes committed.") is False
+
+
+# ---------------------------------------------------------------------------
+# classify_tone
+# ---------------------------------------------------------------------------
+
+class TestClassifyTone:
+    def test_question(self):
+        assert classify_tone("Should I refactor this function?") == "question"
+
+    def test_error(self):
+        assert classify_tone("Error: the build failed with 3 type errors.") == "error"
+
+    def test_failed(self):
+        assert classify_tone("Failed to connect to the database.") == "error"
+
+    def test_warning(self):
+        assert classify_tone("Warning: this API is deprecated.") == "warning"
+
+    def test_completion(self):
+        assert classify_tone("All tests passed. The feature is complete.") == "completion"
+
+    def test_done(self):
+        assert classify_tone("Done. All changes have been applied and verified.") == "completion"
+
+    def test_normal_text(self):
+        assert classify_tone("Here is how the auth middleware works.") is None
+
+    def test_empty(self):
+        assert classify_tone("") is None
+        assert classify_tone(None) is None
 
 
 # ---------------------------------------------------------------------------

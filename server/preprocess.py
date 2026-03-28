@@ -302,6 +302,36 @@ def should_speak(text):
     return True
 
 
+def classify_tone(text):
+    """Classify response tone for chime selection.
+
+    Returns one of: "error", "question", "completion", "warning", or None (default).
+    Uses simple keyword matching on raw text — no ML needed.
+    """
+    if not text:
+        return None
+
+    first_line = text.strip().split("\n")[0].lower()
+    full_lower = text.lower()
+
+    if text.rstrip().endswith("?"):
+        return "question"
+
+    error_words = ("error", "failed", "failure", "exception", "traceback", "blocked", "broke", "crash")
+    if any(w in first_line for w in error_words):
+        return "error"
+
+    warning_words = ("warning", "caution", "note:", "careful", "deprecated", "⚠")
+    if any(w in first_line for w in warning_words):
+        return "warning"
+
+    completion_words = ("done", "complete", "finished", "fixed", "shipped", "merged", "deployed", "passed")
+    if any(w in full_lower[:200] for w in completion_words):
+        return "completion"
+
+    return None
+
+
 def summarize(text):
     """Produce a short spoken summary: preprocess, take first few sentences, cap length.
 

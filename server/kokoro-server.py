@@ -16,6 +16,7 @@ import soundfile as sf
 # layouts put preprocess.py next to kokoro-server.py.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from preprocess import (
+    classify_tone,
     preprocess,
     should_speak,
     split_sentences,
@@ -73,13 +74,15 @@ class TTSHandler(BaseHTTPRequestHandler):
             return None, None
         return data, text
 
-    def _send_wav(self, samples, sample_rate):
+    def _send_wav(self, samples, sample_rate, tone=None):
         buf = io.BytesIO()
         sf.write(buf, samples, sample_rate, format="WAV")
         wav_bytes = buf.getvalue()
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
         self.send_header("Content-Length", str(len(wav_bytes)))
+        if tone:
+            self.send_header("X-TTS-Tone", tone)
         self.end_headers()
         self.wfile.write(wav_bytes)
 
@@ -110,11 +113,19 @@ class TTSHandler(BaseHTTPRequestHandler):
         speed = data.get("speed", SPEED)
         mode = data.get("mode")
 
+        # Classify tone before preprocessing (needs raw text)
+        tone = classify_tone(text)
+
         # In summary mode (auto-speak), check if the content is worth speaking
         # before doing any expensive TTS work. Code-heavy responses get rejected.
         if mode == "summary":
             if not should_speak(text):
-                return self._send_error(204)
+                # Return tone so hooks can still play a chime
+                self.send_response(204)
+                if tone:
+                    self.send_header("X-TTS-Tone", tone)
+                self.end_headers()
+                return
             text = summarize(text)
         else:
             text = preprocess(text)
@@ -124,14 +135,14 @@ class TTSHandler(BaseHTTPRequestHandler):
 
         try:
             if len(text) > MAX_CHUNK_LEN:
-                self._generate_chunked(text, voice, speed)
+                self._generate_chunked(text, voice, speed, tone)
             else:
                 samples, sample_rate = tts_model.create(text, voice=voice, speed=speed)
-                self._send_wav(samples, sample_rate)
+                self._send_wav(samples, sample_rate, tone)
         except Exception as e:
             self._send_error(500, str(e))
 
-    def _generate_chunked(self, text, voice, speed):
+    def _generate_chunked(self, text, voice, speed, tone=None):
         """Chunk text on sentence boundaries, generate each, concatenate into one WAV."""
         chunks = split_sentences(text)
         all_samples = []
@@ -150,7 +161,7 @@ class TTSHandler(BaseHTTPRequestHandler):
             return self._send_error(400, "No speakable text")
 
         combined = np.concatenate(all_samples)
-        self._send_wav(combined, sample_rate)
+        self._send_wav(combined, sample_rate, tone)
 
 
 def main():

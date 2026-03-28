@@ -57,7 +57,8 @@ fi
 # Remove hooks + scripts
 for f in "$HOME/.claude/hooks/tts-speak.sh" \
          "$HOME/.claude/hooks/tts-plan-reader.sh" \
-         "$HOME/.claude/scripts/tts-speak.sh"; do
+         "$HOME/.claude/scripts/tts-speak.sh" \
+         "$HOME/.claude/scripts/tts-chime.sh"; do
     if [[ -f "$f" ]]; then
         rm "$f"
         echo "  Removed $f"

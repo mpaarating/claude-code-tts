@@ -14,6 +14,13 @@ PORT="${KOKORO_PORT:-7723}"
 VOICE="${KOKORO_VOICE:-af_heart}"
 PLATFORM="$(uname -s)"
 MAX_WAIT_SECS=20
+WITH_HOTKEYS=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --with-hotkeys) WITH_HOTKEYS=true ;;
+    esac
+done
 
 echo "=== Claude Code TTS Installer ==="
 echo "Platform: $PLATFORM"
@@ -128,7 +135,8 @@ cp "$REPO_DIR/hooks/tts-speak.sh" "$HOOKS_DIR/tts-speak.sh"
 cp "$REPO_DIR/hooks/tts-plan-reader.sh" "$HOOKS_DIR/tts-plan-reader.sh"
 cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
 cp "$REPO_DIR/scripts/tts-stop.sh" "$SCRIPTS_DIR/tts-stop.sh"
-chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh"
+cp "$REPO_DIR/scripts/tts-chime.sh" "$SCRIPTS_DIR/tts-chime.sh"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh"
 echo "  Hooks and scripts installed."
 
 # --- Create daemon (platform-specific) ---
@@ -295,6 +303,42 @@ export CLAUDE_TTS=auto   # auto-speak conversational responses
 export CLAUDE_TTS=off    # back to silent
 ```
 INSTRUCTIONS
+fi
+
+# --- Hotkeys (optional) ---
+
+if [[ "$WITH_HOTKEYS" == "true" ]]; then
+    echo ""
+    echo "Setting up global hotkeys..."
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        if command -v skhd &>/dev/null; then
+            SKHD_DIR="$HOME/.config/skhd"
+            mkdir -p "$SKHD_DIR"
+            if [[ -f "$SKHD_DIR/skhdrc" ]] && grep -q "claude-tts" "$SKHD_DIR/skhdrc"; then
+                echo "  skhd hotkeys already configured."
+            else
+                cat "$REPO_DIR/config/skhdrc" >> "$SKHD_DIR/skhdrc"
+                echo "  skhd hotkeys added to $SKHD_DIR/skhdrc"
+                skhd --restart-service 2>/dev/null || true
+            fi
+        else
+            echo "  skhd not found. Install with: brew install skhd && skhd --start-service"
+            echo "  Then re-run: bash install.sh --with-hotkeys"
+        fi
+    elif [[ "$PLATFORM" == "Linux" ]]; then
+        if command -v sxhkd &>/dev/null; then
+            SXHKD_DIR="$HOME/.config/sxhkd"
+            mkdir -p "$SXHKD_DIR"
+            if [[ -f "$SXHKD_DIR/sxhkdrc" ]] && grep -q "claude-tts" "$SXHKD_DIR/sxhkdrc"; then
+                echo "  sxhkd hotkeys already configured."
+            else
+                cat "$REPO_DIR/config/sxhkdrc" >> "$SXHKD_DIR/sxhkdrc"
+                echo "  sxhkd hotkeys added."
+            fi
+        else
+            echo "  sxhkd not found. Install with: sudo apt install sxhkd"
+        fi
+    fi
 fi
 
 # --- Test ---
