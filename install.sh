@@ -1,0 +1,256 @@
+#!/bin/bash
+set -euo pipefail
+
+# Claude Code TTS — Installer
+# Local, free text-to-speech for Claude Code using Kokoro TTS.
+
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="$HOME/.local/share/claude-code-tts"
+MODELS_DIR="$INSTALL_DIR/models"
+HOOKS_DIR="$HOME/.claude/hooks"
+SCRIPTS_DIR="$HOME/.claude/scripts"
+PLIST_DIR="$HOME/Library/LaunchAgents"
+PLIST_NAME="com.$(whoami).kokoro-tts"
+PORT="${KOKORO_PORT:-7723}"
+VOICE="${KOKORO_VOICE:-af_heart}"
+
+echo "=== Claude Code TTS Installer ==="
+echo ""
+
+# --- Check dependencies ---
+
+echo "Checking dependencies..."
+
+if ! command -v jq &>/dev/null; then
+    echo "ERROR: jq is required. Install with: brew install jq"
+    exit 1
+fi
+
+if ! command -v ffplay &>/dev/null; then
+    echo "ERROR: ffplay is required. Install with: brew install ffmpeg"
+    exit 1
+fi
+
+# Find a suitable Python (3.10+)
+PYTHON=""
+for py in python3.14 python3.13 python3.12 python3.11 python3.10; do
+    if command -v "$py" &>/dev/null; then
+        PYTHON="$py"
+        break
+    fi
+done
+
+# Check homebrew python
+if [[ -z "$PYTHON" ]]; then
+    for py in /opt/homebrew/bin/python3.{14,13,12,11,10}; do
+        if [[ -x "$py" ]]; then
+            PYTHON="$py"
+            break
+        fi
+    done
+fi
+
+if [[ -z "$PYTHON" ]]; then
+    echo "ERROR: Python 3.10+ is required. Install with: brew install python@3.13"
+    exit 1
+fi
+
+PY_VERSION=$($PYTHON --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+echo "  Python: $PYTHON ($PY_VERSION)"
+echo "  jq: $(which jq)"
+echo "  ffplay: $(which ffplay)"
+echo ""
+
+# --- Create venv + install packages ---
+
+echo "Setting up Python environment..."
+mkdir -p "$INSTALL_DIR" "$MODELS_DIR"
+
+if [[ ! -d "$INSTALL_DIR/venv" ]]; then
+    $PYTHON -m venv "$INSTALL_DIR/venv"
+fi
+
+"$INSTALL_DIR/venv/bin/pip" install -q kokoro-onnx soundfile numpy 2>&1 | tail -1
+echo "  Packages installed."
+
+# --- Download models (if not present) ---
+
+MODEL_FILE="$MODELS_DIR/kokoro-v1.0.onnx"
+VOICES_FILE="$MODELS_DIR/voices-v1.0.bin"
+
+if [[ ! -f "$MODEL_FILE" ]]; then
+    echo "Downloading Kokoro model (~310MB)..."
+    curl -L --progress-bar -o "$MODEL_FILE" \
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+else
+    echo "  Model already downloaded."
+fi
+
+if [[ ! -f "$VOICES_FILE" ]]; then
+    echo "Downloading voice data (~27MB)..."
+    curl -L --progress-bar -o "$VOICES_FILE" \
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+else
+    echo "  Voices already downloaded."
+fi
+
+# --- Copy server ---
+
+cp "$REPO_DIR/server/kokoro-server.py" "$INSTALL_DIR/kokoro-server.py"
+echo "  Server installed."
+
+# --- Copy hooks + scripts ---
+
+mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR"
+
+cp "$REPO_DIR/hooks/tts-speak.sh" "$HOOKS_DIR/tts-speak.sh"
+cp "$REPO_DIR/hooks/tts-plan-reader.sh" "$HOOKS_DIR/tts-plan-reader.sh"
+cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$SCRIPTS_DIR/tts-speak.sh"
+echo "  Hooks and scripts installed."
+
+# --- Create launchd plist ---
+
+mkdir -p "$PLIST_DIR"
+cat > "$PLIST_DIR/${PLIST_NAME}.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_NAME}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${INSTALL_DIR}/venv/bin/python3</string>
+        <string>${INSTALL_DIR}/kokoro-server.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/kokoro-tts.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/kokoro-tts.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>KOKORO_PORT</key>
+        <string>${PORT}</string>
+        <key>KOKORO_VOICE</key>
+        <string>${VOICE}</string>
+    </dict>
+</dict>
+</plist>
+EOF
+echo "  LaunchAgent created."
+
+# --- Start daemon ---
+
+echo ""
+echo "Starting Kokoro TTS daemon..."
+launchctl unload "$PLIST_DIR/${PLIST_NAME}.plist" 2>/dev/null || true
+sleep 1
+launchctl load "$PLIST_DIR/${PLIST_NAME}.plist"
+
+# Wait for model to load
+echo -n "  Waiting for model to load"
+for i in $(seq 1 20); do
+    if curl -s --max-time 1 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+        echo " ready!"
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+
+if ! curl -s --max-time 2 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    echo ""
+    echo "WARNING: Daemon didn't start. Check /tmp/kokoro-tts.log"
+    exit 1
+fi
+
+# --- Configure Claude Code ---
+
+echo ""
+echo "Configuring Claude Code hooks..."
+
+SETTINGS_FILE="$HOME/.claude/settings.json"
+
+if [[ -f "$SETTINGS_FILE" ]]; then
+    # Check if hooks are already configured
+    if grep -q "tts-speak.sh" "$SETTINGS_FILE"; then
+        echo "  Hooks already configured in settings.json"
+    else
+        echo ""
+        echo "  Add these hooks to your ~/.claude/settings.json manually:"
+        echo ""
+        echo '  In the "Stop" array:'
+        echo '    {'
+        echo '      "hooks": [{'
+        echo '        "type": "command",'
+        echo "        \"command\": \"bash $HOOKS_DIR/tts-speak.sh\","
+        echo '        "timeout": 15'
+        echo '      }]'
+        echo '    }'
+        echo ""
+        echo '  In the "PostToolUse" array:'
+        echo '    {'
+        echo '      "matcher": "ExitPlanMode",'
+        echo '      "hooks": [{'
+        echo '        "type": "command",'
+        echo "        \"command\": \"bash $HOOKS_DIR/tts-plan-reader.sh\","
+        echo '        "timeout": 5'
+        echo '      }]'
+        echo '    }'
+    fi
+else
+    echo "  No settings.json found. Create one or add hooks manually."
+fi
+
+# --- Add CLAUDE.md instructions ---
+
+CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+if [[ -f "$CLAUDE_MD" ]] && ! grep -q "Voice Output" "$CLAUDE_MD"; then
+    echo ""
+    echo "  Add this to your ~/.claude/CLAUDE.md:"
+    echo ""
+    cat <<'INSTRUCTIONS'
+## Voice Output (Kokoro TTS)
+
+**On-demand**: When the user says "read that to me", "say that", "speak", or similar:
+```bash
+bash ~/.claude/scripts/tts-speak.sh "text to speak"
+```
+The script handles markdown stripping, chunking, and seamless playback. Runs locally, free.
+
+**Session voice toggle**: "voice on" / "voice off":
+```bash
+export CLAUDE_TTS=auto   # auto-speak conversational responses
+export CLAUDE_TTS=off    # back to silent
+```
+INSTRUCTIONS
+fi
+
+# --- Test ---
+
+echo ""
+echo "=== Testing ==="
+curl -s -X POST "http://127.0.0.1:${PORT}/speak" \
+    -H "Content-Type: application/json" \
+    -d '{"text": "Claude Code TTS is ready. You can say read that to me to hear any response."}' \
+    --max-time 15 \
+    2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -i pipe:0 2>/dev/null
+
+echo ""
+echo "=== Installation complete ==="
+echo ""
+echo "Usage:"
+echo "  On-demand:  Tell Claude 'read that to me'"
+echo "  Auto mode:  Tell Claude 'voice on' (or set CLAUDE_TTS=auto)"
+echo "  Plan mode:  Plans are automatically read aloud on approval prompt"
+echo "  Stop:       Tell Claude 'voice off' (or set CLAUDE_TTS=off)"
+echo ""
+echo "Daemon: launchctl start/stop ${PLIST_NAME}"
+echo "Logs:   /tmp/kokoro-tts.log"
