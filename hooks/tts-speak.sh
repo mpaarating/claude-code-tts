@@ -49,13 +49,16 @@ curl -s --max-time 1 "$KOKORO_URL/health" >/dev/null 2>&1 || exit 0
 
 # --- Speak (async, don't block Claude) ---
 
+# Stop any existing TTS playback before starting new audio
+pkill -f "ffplay.*claude-tts" 2>/dev/null
+
 (
     echo $$ > "$LOCK_FILE"
     curl -s -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
         -d "$(jq -n --arg text "$MESSAGE" '{text: $text, mode: "summary"}')" \
         --max-time 30 \
-        2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -i pipe:0 2>/dev/null
+        2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -f wav -window_title claude-tts -i pipe:0 2>/dev/null
     rm -f "$LOCK_FILE"
 ) &
 

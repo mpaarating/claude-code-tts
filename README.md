@@ -102,6 +102,11 @@ bash ~/.claude/scripts/tts-speak.sh "text to speak"
 \`\`\`
 The script handles chunking and seamless playback. Runs locally, free.
 
+**Stop playback**: When the user says "stop", "mute", or "quiet":
+\`\`\`bash
+bash ~/.claude/scripts/tts-stop.sh
+\`\`\`
+
 **Session voice toggle**: "voice on" / "voice off":
 \`\`\`bash
 export CLAUDE_TTS=auto   # auto-speak conversational responses
@@ -120,6 +125,18 @@ Tell Claude to read something:
 > "Say that"
 
 Claude pipes its response through TTS. Short responses play immediately; long responses are chunked with natural pacing — no gaps between sentences.
+
+### Stop playback
+
+Interrupt audio at any time:
+
+> "Stop"
+
+> "Mute"
+
+Or directly: `bash ~/.claude/scripts/tts-stop.sh`
+
+New audio automatically interrupts any currently playing audio — you don't need to stop manually before asking Claude to read something else.
 
 ### Voice sessions
 
@@ -272,7 +289,8 @@ claude-code-tts/
 │   ├── tts-speak.sh           # Claude Code Stop hook (auto-speak)
 │   └── tts-plan-reader.sh     # Plan approval auto-reader
 ├── scripts/
-│   └── tts-speak.sh           # On-demand "read that to me"
+│   ├── tts-speak.sh           # On-demand "read that to me"
+│   └── tts-stop.sh            # Stop current audio playback
 ├── install.sh                 # One-command installer (macOS + Linux)
 └── uninstall.sh               # Clean removal
 ```
