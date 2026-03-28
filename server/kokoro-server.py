@@ -17,6 +17,7 @@ import soundfile as sf
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from preprocess import (
     preprocess,
+    should_speak,
     split_sentences,
     summarize,
     MAX_CHUNK_LEN,
@@ -109,8 +110,11 @@ class TTSHandler(BaseHTTPRequestHandler):
         speed = data.get("speed", SPEED)
         mode = data.get("mode")
 
-        # Apply summary mode if requested
+        # In summary mode (auto-speak), check if the content is worth speaking
+        # before doing any expensive TTS work. Code-heavy responses get rejected.
         if mode == "summary":
+            if not should_speak(text):
+                return self._send_error(204)
             text = summarize(text)
         else:
             text = preprocess(text)

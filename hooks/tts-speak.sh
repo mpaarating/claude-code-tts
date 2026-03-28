@@ -1,14 +1,12 @@
 #!/bin/bash
 # Claude Code TTS — Stop hook for auto-speak mode.
-# Text preprocessing (markdown stripping, pronunciation, truncation)
-# is handled server-side. This hook just classifies and dispatches.
+# Classification and preprocessing are handled server-side.
+# This hook just dispatches the raw message.
 #
 # Modes (set CLAUDE_TTS env var):
 #   off  — silent (default). On-demand "read that to me" still works.
 #   auto — speak questions, completions, errors. Silent during code.
 
-MIN_MESSAGE_LEN=20
-CODE_RATIO_THRESHOLD=40
 LOCK_FILE="/tmp/claude-tts.lock"
 
 CLAUDE_TTS="${CLAUDE_TTS:-off}"
@@ -20,7 +18,6 @@ HOOK_JSON=$(cat)
 MESSAGE=$(echo "$HOOK_JSON" | jq -r '.last_assistant_message // empty' 2>/dev/null)
 
 [[ -z "$MESSAGE" ]] && exit 0
-[[ ${#MESSAGE} -lt "$MIN_MESSAGE_LEN" ]] && exit 0
 
 # Debounce: skip if another TTS is already playing
 if [[ -f "$LOCK_FILE" ]]; then
@@ -30,20 +27,6 @@ if [[ -f "$LOCK_FILE" ]]; then
     fi
     rm -f "$LOCK_FILE"
 fi
-
-# --- Classification: skip code-heavy responses ---
-# Responses that are mostly code aren't useful to hear — variable names
-# and syntax produce garbled speech. Better to stay silent.
-
-TOTAL_LINES=$(echo "$MESSAGE" | wc -l | tr -d ' ')
-CODE_LINES=$(echo "$MESSAGE" | awk '/^```/{inside=!inside; next} inside{count++} END{print count+0}')
-if [[ "$TOTAL_LINES" -gt 0 ]]; then
-    CODE_RATIO=$(( CODE_LINES * 100 / TOTAL_LINES ))
-else
-    CODE_RATIO=0
-fi
-
-[[ "$CODE_RATIO" -gt "$CODE_RATIO_THRESHOLD" ]] && exit 0
 
 # --- Health check (silent exit for hooks) ---
 

@@ -12,6 +12,8 @@ MAX_CHUNK_LEN = 500
 INTER_CHUNK_SILENCE_SECS = 0.15
 SUMMARY_MAX_SENTENCES = 3
 SUMMARY_MAX_CHARS = 800
+MIN_SPEAKABLE_LEN = 20
+CODE_RATIO_THRESHOLD = 40  # percent — skip if response is mostly code
 
 # ---------------------------------------------------------------------------
 # Pronunciation / units / symbols — loaded from pronunciation.json if present,
@@ -244,6 +246,35 @@ def split_sentences(text, max_len=MAX_CHUNK_LEN):
     if current:
         chunks.append(current)
     return chunks
+
+
+def should_speak(text):
+    """Decide whether raw text (before preprocessing) is worth speaking.
+
+    Returns False for code-heavy or too-short responses where TTS would
+    produce garbled output. Centralizes the classification logic so hooks
+    don't need to duplicate it.
+    """
+    if not text or len(text) < MIN_SPEAKABLE_LEN:
+        return False
+
+    lines = text.split("\n")
+    total = len(lines)
+    if total == 0:
+        return False
+
+    # Count lines inside fenced code blocks
+    inside_code = False
+    code_lines = 0
+    for line in lines:
+        if line.strip().startswith("```"):
+            inside_code = not inside_code
+            continue
+        if inside_code:
+            code_lines += 1
+
+    code_ratio = code_lines * 100 // total
+    return code_ratio <= CODE_RATIO_THRESHOLD
 
 
 def summarize(text):
