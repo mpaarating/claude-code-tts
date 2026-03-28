@@ -119,6 +119,7 @@ fi
 
 cp "$REPO_DIR/server/kokoro-server.py" "$INSTALL_DIR/kokoro-server.py"
 cp "$REPO_DIR/server/preprocess.py" "$INSTALL_DIR/preprocess.py"
+cp "$REPO_DIR/server/mcp-server.py" "$INSTALL_DIR/mcp-server.py"
 if [[ -f "$REPO_DIR/server/pronunciation.json" ]]; then
     # Only copy if user hasn't customized their own
     if [[ ! -f "$INSTALL_DIR/pronunciation.json" ]]; then
@@ -366,3 +367,10 @@ elif [[ "$PLATFORM" == "Linux" ]]; then
     echo "Daemon: systemctl --user start/stop kokoro-tts"
 fi
 echo "Logs:   /tmp/kokoro-tts.log"
+echo ""
+echo "MCP server (optional — lets Claude call TTS directly as a tool):"
+echo "  Add to ~/.claude/settings.json under \"mcpServers\":"
+echo "    \"tts\": {"
+echo "      \"command\": \"${INSTALL_DIR}/venv/bin/python3\","
+echo "      \"args\": [\"${INSTALL_DIR}/mcp-server.py\"]"
+echo "    }"
