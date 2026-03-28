@@ -22,6 +22,7 @@ from preprocess import (
     should_speak,
     split_sentences,
     summarize,
+    voice_for_agent,
     voice_for_tone,
     MAX_CHUNK_LEN,
     INTER_CHUNK_SILENCE_SECS,
@@ -134,17 +135,25 @@ class TTSHandler(BaseHTTPRequestHandler):
         voice = data.get("voice")
         speed = data.get("speed")
         mode = data.get("mode")
+        agent = data.get("agent")
 
         # Classify tone before preprocessing (needs raw text)
         tone = classify_tone(text)
 
-        # Apply tone-based voice/speed if caller didn't specify
-        if tone and (voice is None or speed is None):
-            tone_voice, tone_speed = voice_for_tone(tone)
-            if voice is None:
-                voice = tone_voice or VOICE
-            if speed is None:
-                speed = tone_speed or SPEED
+        # Priority: explicit voice > agent voice > tone voice > default
+        if voice is None or speed is None:
+            if agent:
+                agent_voice, agent_speed = voice_for_agent(agent)
+                if voice is None:
+                    voice = agent_voice
+                if speed is None:
+                    speed = agent_speed
+            if tone and (voice is None or speed is None):
+                tone_voice, tone_speed = voice_for_tone(tone)
+                if voice is None:
+                    voice = tone_voice
+                if speed is None:
+                    speed = tone_speed
         voice = voice or VOICE
         speed = speed or SPEED
 

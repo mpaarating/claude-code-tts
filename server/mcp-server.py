@@ -63,7 +63,7 @@ def _daemon_healthy():
         return False
 
 
-def _speak(text, voice=None, speed=None, mode=None):
+def _speak(text, voice=None, speed=None, mode=None, agent=None):
     """Send text to the Kokoro daemon for speech synthesis and playback."""
     if not _daemon_healthy():
         return {"success": False, "error": "Kokoro daemon not running"}
@@ -75,6 +75,8 @@ def _speak(text, voice=None, speed=None, mode=None):
         payload["speed"] = speed
     if mode:
         payload["mode"] = mode
+    if agent:
+        payload["agent"] = agent
 
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
@@ -152,6 +154,10 @@ TOOLS = [
                     "type": "number",
                     "description": "Speech speed multiplier (default: 1.0).",
                 },
+                "agent": {
+                    "type": "string",
+                    "description": "Agent type for voice selection (e.g. 'architect', 'nitpicker', 'planner', 'researcher'). Maps to a distinct voice automatically.",
+                },
             },
             "required": ["text"],
         },
@@ -189,7 +195,7 @@ def handle_request(msg):
         args = params.get("arguments", {})
 
         if tool_name == "speak":
-            result = _speak(args.get("text", ""), args.get("voice"), args.get("speed"))
+            result = _speak(args.get("text", ""), args.get("voice"), args.get("speed"), agent=args.get("agent"))
         elif tool_name == "stop":
             result = _stop()
         elif tool_name == "status":

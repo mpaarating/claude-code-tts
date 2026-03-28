@@ -356,11 +356,48 @@ def _load_tone_voices():
 
 TONE_VOICES = _load_tone_voices()
 
+# Agent type → voice mapping. Configurable via pronunciation.json "agent_voices".
+_BUILTIN_AGENT_VOICES = {
+    "planner":    {"voice": "am_michael", "speed": 1.0},
+    "orchestrator": {"voice": "am_michael", "speed": 1.0},
+    "reviewer":   {"voice": "af_bella",   "speed": 1.0},
+    "architect":  {"voice": "af_bella",   "speed": 0.95},
+    "nitpicker":  {"voice": "af_bella",   "speed": 1.05},
+    "researcher": {"voice": "af_heart",   "speed": 1.0},
+    "contrarian": {"voice": "am_adam",    "speed": 0.95},
+}
+
+
+def _load_agent_voices():
+    if os.path.isfile(_json_path):
+        try:
+            with open(_json_path, "r") as f:
+                data = json.load(f)
+            return data.get("agent_voices", _BUILTIN_AGENT_VOICES)
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return _BUILTIN_AGENT_VOICES
+
+
+AGENT_VOICES = _load_agent_voices()
+
 
 def voice_for_tone(tone):
     """Return (voice, speed) for a given tone, or (None, None) for default."""
     if tone and tone in TONE_VOICES:
         entry = TONE_VOICES[tone]
+        return entry.get("voice"), entry.get("speed")
+    return None, None
+
+
+def voice_for_agent(agent_type):
+    """Return (voice, speed) for a given agent type, or (None, None) for default."""
+    if not agent_type:
+        return None, None
+    # Try exact match first, then lowercase
+    key = agent_type if agent_type in AGENT_VOICES else agent_type.lower()
+    if key in AGENT_VOICES:
+        entry = AGENT_VOICES[key]
         return entry.get("voice"), entry.get("speed")
     return None, None
 
