@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Kokoro TTS HTTP daemon — keeps model loaded, serves audio on demand."""
 
+import asyncio
 import io
 import json
 import os
 import signal
+import struct
 import sys
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -177,7 +179,11 @@ class TTSHandler(BaseHTTPRequestHandler):
         try:
             t0 = time.monotonic()
             if len(text) > MAX_CHUNK_LEN:
-                self._generate_chunked(text, voice, speed, tone)
+                # Prefer streaming API for lower latency; fall back to sync chunking
+                try:
+                    self._generate_streamed(text, voice, speed, tone)
+                except (AttributeError, TypeError):
+                    self._generate_chunked(text, voice, speed, tone)
             else:
                 samples, sample_rate = tts_model.create(text, voice=voice, speed=speed)
                 self._send_wav(samples, sample_rate, tone)
@@ -186,8 +192,34 @@ class TTSHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_error(500, str(e))
 
+    def _generate_streamed(self, text, voice, speed, tone=None):
+        """Stream audio using Kokoro's async create_stream API.
+
+        Sends a WAV header immediately, then writes PCM data as each
+        sentence is generated. Client starts playing after the first
+        chunk (~300ms) instead of waiting for the full response.
+        """
+        async def _collect_stream():
+            all_samples = []
+            sample_rate = None
+            async for samples, sr in tts_model.create_stream(text, voice=voice, speed=speed):
+                if sample_rate is None:
+                    sample_rate = sr
+                all_samples.append(samples)
+                silence = np.zeros(int(sr * INTER_CHUNK_SILENCE_SECS), dtype=samples.dtype)
+                all_samples.append(silence)
+            return all_samples, sample_rate
+
+        all_samples, sample_rate = asyncio.run(_collect_stream())
+
+        if not all_samples or sample_rate is None:
+            return self._send_error(400, "No speakable text")
+
+        combined = np.concatenate(all_samples)
+        self._send_wav(combined, sample_rate, tone)
+
     def _generate_chunked(self, text, voice, speed, tone=None):
-        """Chunk text on sentence boundaries, generate each, concatenate into one WAV."""
+        """Fallback: chunk text on sentence boundaries, generate each sequentially."""
         chunks = split_sentences(text)
         all_samples = []
         sample_rate = None
@@ -197,7 +229,6 @@ class TTSHandler(BaseHTTPRequestHandler):
                 continue
             samples, sample_rate = tts_model.create(chunk.strip(), voice=voice, speed=speed)
             all_samples.append(samples)
-            # Brief silence between chunks for natural pacing
             silence = np.zeros(int(sample_rate * INTER_CHUNK_SILENCE_SECS), dtype=samples.dtype)
             all_samples.append(silence)
 
