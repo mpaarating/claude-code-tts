@@ -6,6 +6,7 @@ import json
 import os
 import signal
 import sys
+import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 import numpy as np
@@ -34,6 +35,8 @@ if not os.path.isdir(MODEL_DIR):
 PORT = int(os.environ.get("KOKORO_PORT", 7723))
 VOICE = os.environ.get("KOKORO_VOICE", "af_heart")
 SPEED = float(os.environ.get("KOKORO_SPEED", "1.0"))
+LOG_DIR = os.environ.get("KOKORO_LOG_DIR", os.path.join(os.path.expanduser("~"), ".local", "share", "claude-code-tts", "logs"))
+LOG_FILE = os.path.join(LOG_DIR, "tts-history.jsonl")
 
 tts_model = None
 
@@ -46,6 +49,24 @@ def load_model():
         os.path.join(MODEL_DIR, "voices-v1.0.bin"),
     )
     print(f"Kokoro model loaded. Listening on :{PORT}", flush=True)
+
+
+def _log_speech(text, voice, mode, tone, duration_ms):
+    """Append a record to the JSONL history log."""
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        record = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "text": text[:500],  # cap to avoid huge entries
+            "voice": voice,
+            "mode": mode,
+            "tone": tone,
+            "duration_ms": duration_ms,
+        }
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass  # logging should never break TTS
 
 
 class TTSHandler(BaseHTTPRequestHandler):
@@ -145,11 +166,14 @@ class TTSHandler(BaseHTTPRequestHandler):
             return self._send_error(400, "Nothing speakable after preprocessing")
 
         try:
+            t0 = time.monotonic()
             if len(text) > MAX_CHUNK_LEN:
                 self._generate_chunked(text, voice, speed, tone)
             else:
                 samples, sample_rate = tts_model.create(text, voice=voice, speed=speed)
                 self._send_wav(samples, sample_rate, tone)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            _log_speech(text, voice, mode, tone, duration_ms)
         except Exception as e:
             self._send_error(500, str(e))
 

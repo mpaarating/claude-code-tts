@@ -59,7 +59,8 @@ for f in "$HOME/.claude/hooks/tts-speak.sh" \
          "$HOME/.claude/hooks/tts-plan-reader.sh" \
          "$HOME/.claude/hooks/tts-workflow.sh" \
          "$HOME/.claude/scripts/tts-speak.sh" \
-         "$HOME/.claude/scripts/tts-chime.sh"; do
+         "$HOME/.claude/scripts/tts-chime.sh" \
+         "$HOME/.claude/scripts/tts-log.sh"; do
     if [[ -f "$f" ]]; then
         rm "$f"
         echo "  Removed $f"
