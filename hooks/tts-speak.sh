@@ -1,22 +1,26 @@
 #!/bin/bash
 # Claude Code TTS — Stop hook for auto-speak mode.
-# Speaks conversational responses, stays silent during code output.
+# Text preprocessing (markdown stripping, pronunciation, truncation)
+# is handled server-side. This hook just classifies and dispatches.
 #
 # Modes (set CLAUDE_TTS env var):
 #   off  — silent (default). On-demand "read that to me" still works.
 #   auto — speak questions, completions, errors. Silent during code.
 
+MIN_MESSAGE_LEN=20
+CODE_RATIO_THRESHOLD=40
+LOCK_FILE="/tmp/claude-tts.lock"
+
 CLAUDE_TTS="${CLAUDE_TTS:-off}"
 [[ "$CLAUDE_TTS" == "off" || "$CLAUDE_TTS" == "0" ]] && exit 0
 
-KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}/speak"
-LOCK_FILE="/tmp/claude-tts.lock"
+KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
 
-INPUT=$(cat)
-MESSAGE=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)
+HOOK_JSON=$(cat)
+MESSAGE=$(echo "$HOOK_JSON" | jq -r '.last_assistant_message // empty' 2>/dev/null)
 
 [[ -z "$MESSAGE" ]] && exit 0
-[[ ${#MESSAGE} -lt 20 ]] && exit 0
+[[ ${#MESSAGE} -lt "$MIN_MESSAGE_LEN" ]] && exit 0
 
 # Debounce: skip if another TTS is already playing
 if [[ -f "$LOCK_FILE" ]]; then
@@ -27,7 +31,7 @@ if [[ -f "$LOCK_FILE" ]]; then
     rm -f "$LOCK_FILE"
 fi
 
-# --- Classification ---
+# --- Classification: skip code-heavy responses ---
 
 TOTAL_LINES=$(echo "$MESSAGE" | wc -l | tr -d ' ')
 CODE_LINES=$(echo "$MESSAGE" | awk '/^```/{inside=!inside; next} inside{count++} END{print count+0}')
@@ -37,47 +41,19 @@ else
     CODE_RATIO=0
 fi
 
-# Silent if >40% code
-[[ "$CODE_RATIO" -gt 40 ]] && exit 0
+[[ "$CODE_RATIO" -gt "$CODE_RATIO_THRESHOLD" ]] && exit 0
 
-# --- Extract speakable text ---
+# --- Health check (silent exit for hooks) ---
 
-strip_markdown() {
-    awk '/^```/{skip=!skip; next} !skip{print}' | sed -E \
-        -e 's/\*\*([^*]+)\*\*/\1/g' \
-        -e 's/\*([^*]+)\*/\1/g' \
-        -e 's/`([^`]+)`/\1/g' \
-        -e 's/^#+ //' \
-        -e 's/^- //' \
-        -e 's/^\* //' \
-        -e 's/^[0-9]+\. //' \
-        -e 's/\[([^]]+)\]\([^)]+\)/\1/g' \
-        -e '/^[[:space:]]*$/d' \
-        -e '/^\|/d'
-}
-
-CLEAN=$(echo "$MESSAGE" | strip_markdown)
-[[ -z "$CLEAN" ]] && exit 0
-
-CHAR_COUNT=${#CLEAN}
-if [[ "$CHAR_COUNT" -le 200 ]]; then
-    SPEAK_TEXT="$CLEAN"
-else
-    SPEAK_TEXT=$(echo "$CLEAN" | tr '\n' ' ' | sed -E 's/([.!?])[[:space:]]+/\1\n/g' | head -3 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
-    if [[ ${#SPEAK_TEXT} -lt 20 ]]; then
-        SPEAK_TEXT="${CLEAN:0:300}"
-    fi
-fi
-
-SPEAK_TEXT="${SPEAK_TEXT:0:800}"
+curl -s --max-time 1 "$KOKORO_URL/health" >/dev/null 2>&1 || exit 0
 
 # --- Speak (async, don't block Claude) ---
 
 (
     echo $$ > "$LOCK_FILE"
-    curl -s -X POST "$KOKORO_URL" \
+    curl -s -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
-        -d "$(jq -n --arg text "$SPEAK_TEXT" '{text: $text}')" \
+        -d "$(jq -n --arg text "$MESSAGE" '{text: $text, mode: "summary"}')" \
         --max-time 30 \
         2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -i pipe:0 2>/dev/null
     rm -f "$LOCK_FILE"

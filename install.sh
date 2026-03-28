@@ -3,18 +3,20 @@ set -euo pipefail
 
 # Claude Code TTS — Installer
 # Local, free text-to-speech for Claude Code using Kokoro TTS.
+# Supports macOS (launchd) and Linux (systemd).
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="$HOME/.local/share/claude-code-tts"
 MODELS_DIR="$INSTALL_DIR/models"
 HOOKS_DIR="$HOME/.claude/hooks"
 SCRIPTS_DIR="$HOME/.claude/scripts"
-PLIST_DIR="$HOME/Library/LaunchAgents"
-PLIST_NAME="com.$(whoami).kokoro-tts"
 PORT="${KOKORO_PORT:-7723}"
 VOICE="${KOKORO_VOICE:-af_heart}"
+PLATFORM="$(uname -s)"
+MAX_WAIT_SECS=20
 
 echo "=== Claude Code TTS Installer ==="
+echo "Platform: $PLATFORM"
 echo ""
 
 # --- Check dependencies ---
@@ -22,12 +24,20 @@ echo ""
 echo "Checking dependencies..."
 
 if ! command -v jq &>/dev/null; then
-    echo "ERROR: jq is required. Install with: brew install jq"
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        echo "ERROR: jq is required. Install with: brew install jq"
+    else
+        echo "ERROR: jq is required. Install with: sudo apt install jq (or your package manager)"
+    fi
     exit 1
 fi
 
 if ! command -v ffplay &>/dev/null; then
-    echo "ERROR: ffplay is required. Install with: brew install ffmpeg"
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        echo "ERROR: ffplay is required. Install with: brew install ffmpeg"
+    else
+        echo "ERROR: ffplay is required. Install with: sudo apt install ffmpeg (or your package manager)"
+    fi
     exit 1
 fi
 
@@ -40,8 +50,8 @@ for py in python3.14 python3.13 python3.12 python3.11 python3.10; do
     fi
 done
 
-# Check homebrew python
-if [[ -z "$PYTHON" ]]; then
+# Check homebrew python (macOS)
+if [[ -z "$PYTHON" && "$PLATFORM" == "Darwin" ]]; then
     for py in /opt/homebrew/bin/python3.{14,13,12,11,10}; do
         if [[ -x "$py" ]]; then
             PYTHON="$py"
@@ -51,7 +61,11 @@ if [[ -z "$PYTHON" ]]; then
 fi
 
 if [[ -z "$PYTHON" ]]; then
-    echo "ERROR: Python 3.10+ is required. Install with: brew install python@3.13"
+    if [[ "$PLATFORM" == "Darwin" ]]; then
+        echo "ERROR: Python 3.10+ is required. Install with: brew install python@3.13"
+    else
+        echo "ERROR: Python 3.10+ is required. Install with: sudo apt install python3.12 python3.12-venv"
+    fi
     exit 1
 fi
 
@@ -94,9 +108,16 @@ else
     echo "  Voices already downloaded."
 fi
 
-# --- Copy server ---
+# --- Copy server + config ---
 
 cp "$REPO_DIR/server/kokoro-server.py" "$INSTALL_DIR/kokoro-server.py"
+cp "$REPO_DIR/server/preprocess.py" "$INSTALL_DIR/preprocess.py"
+if [[ -f "$REPO_DIR/server/pronunciation.json" ]]; then
+    # Only copy if user hasn't customized their own
+    if [[ ! -f "$INSTALL_DIR/pronunciation.json" ]]; then
+        cp "$REPO_DIR/server/pronunciation.json" "$INSTALL_DIR/pronunciation.json"
+    fi
+fi
 echo "  Server installed."
 
 # --- Copy hooks + scripts ---
@@ -109,10 +130,16 @@ cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
 chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$SCRIPTS_DIR/tts-speak.sh"
 echo "  Hooks and scripts installed."
 
-# --- Create launchd plist ---
+# --- Create daemon (platform-specific) ---
 
-mkdir -p "$PLIST_DIR"
-cat > "$PLIST_DIR/${PLIST_NAME}.plist" <<EOF
+SERVICE_NAME="kokoro-tts"
+
+if [[ "$PLATFORM" == "Darwin" ]]; then
+    # macOS: launchd plist
+    PLIST_DIR="$HOME/Library/LaunchAgents"
+    PLIST_NAME="com.$(whoami).${SERVICE_NAME}"
+    mkdir -p "$PLIST_DIR"
+    cat > "$PLIST_DIR/${PLIST_NAME}.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -128,6 +155,7 @@ cat > "$PLIST_DIR/${PLIST_NAME}.plist" <<EOF
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <!-- Lower CPU priority so TTS doesn't compete with dev tools -->
     <key>Nice</key>
     <integer>10</integer>
     <key>StandardOutPath</key>
@@ -144,19 +172,55 @@ cat > "$PLIST_DIR/${PLIST_NAME}.plist" <<EOF
 </dict>
 </plist>
 EOF
-echo "  LaunchAgent created."
+    echo "  LaunchAgent created."
 
-# --- Start daemon ---
+    # Start daemon
+    echo ""
+    echo "Starting Kokoro TTS daemon..."
+    launchctl unload "$PLIST_DIR/${PLIST_NAME}.plist" 2>/dev/null || true
+    sleep 1
+    launchctl load "$PLIST_DIR/${PLIST_NAME}.plist"
 
-echo ""
-echo "Starting Kokoro TTS daemon..."
-launchctl unload "$PLIST_DIR/${PLIST_NAME}.plist" 2>/dev/null || true
-sleep 1
-launchctl load "$PLIST_DIR/${PLIST_NAME}.plist"
+elif [[ "$PLATFORM" == "Linux" ]]; then
+    # Linux: systemd user service
+    SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$SYSTEMD_DIR"
+    cat > "$SYSTEMD_DIR/${SERVICE_NAME}.service" <<EOF
+[Unit]
+Description=Kokoro TTS daemon for Claude Code
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/kokoro-server.py
+Restart=always
+RestartSec=5
+Nice=10
+Environment=KOKORO_PORT=${PORT}
+Environment=KOKORO_VOICE=${VOICE}
+StandardOutput=append:/tmp/kokoro-tts.log
+StandardError=append:/tmp/kokoro-tts.log
+
+[Install]
+WantedBy=default.target
+EOF
+    echo "  systemd user service created."
+
+    # Start daemon
+    echo ""
+    echo "Starting Kokoro TTS daemon..."
+    systemctl --user daemon-reload
+    systemctl --user enable "${SERVICE_NAME}.service"
+    systemctl --user restart "${SERVICE_NAME}.service"
+
+else
+    echo "WARNING: Unsupported platform '$PLATFORM'. Start the daemon manually:"
+    echo "  ${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/kokoro-server.py"
+fi
 
 # Wait for model to load
 echo -n "  Waiting for model to load"
-for i in $(seq 1 20); do
+for i in $(seq 1 "$MAX_WAIT_SECS"); do
     if curl -s --max-time 1 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
         echo " ready!"
         break
@@ -179,9 +243,8 @@ echo "Configuring Claude Code hooks..."
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
 if [[ -f "$SETTINGS_FILE" ]]; then
-    # Check if hooks are already configured
     if grep -q "tts-speak.sh" "$SETTINGS_FILE"; then
-        echo "  Hooks already configured in settings.json"
+        echo "  Hooks already configured in settings.json."
     else
         echo ""
         echo "  Add these hooks to your ~/.claude/settings.json manually:"
@@ -252,5 +315,9 @@ echo "  Auto mode:  Tell Claude 'voice on' (or set CLAUDE_TTS=auto)"
 echo "  Plan mode:  Plans are automatically read aloud on approval prompt"
 echo "  Stop:       Tell Claude 'voice off' (or set CLAUDE_TTS=off)"
 echo ""
-echo "Daemon: launchctl start/stop ${PLIST_NAME}"
+if [[ "$PLATFORM" == "Darwin" ]]; then
+    echo "Daemon: launchctl start/stop com.$(whoami).kokoro-tts"
+elif [[ "$PLATFORM" == "Linux" ]]; then
+    echo "Daemon: systemctl --user start/stop kokoro-tts"
+fi
 echo "Logs:   /tmp/kokoro-tts.log"

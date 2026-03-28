@@ -1,7 +1,13 @@
 #!/bin/bash
 # Auto-read plan files aloud when ExitPlanMode is called.
+# Text preprocessing (markdown stripping, pronunciation, truncation)
+# is handled server-side. This hook just reads and dispatches.
+#
 # Fires as a PostToolUse hook so you hear the plan while
 # looking at the approve/reject prompt.
+
+MAX_PLAN_LINES=60
+MAX_PLAN_CHARS=2000
 
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
 
@@ -20,25 +26,14 @@ PLAN_DIR="$HOME/.config/claude/plans"
 PLAN_FILE=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | head -1)
 [[ -z "$PLAN_FILE" || ! -f "$PLAN_FILE" ]] && exit 0
 
-# Extract a spoken summary — first ~60 lines / 2000 chars
-CLEAN=$(awk '/^```/{skip=!skip; next} !skip{print}' "$PLAN_FILE" | sed -E \
-    -e 's/\*\*([^*]+)\*\*/\1/g' \
-    -e 's/\*([^*]+)\*/\1/g' \
-    -e 's/`([^`]+)`/\1/g' \
-    -e 's/^#+ //' \
-    -e 's/^- //' \
-    -e 's/^\* //' \
-    -e 's/^[0-9]+\. //' \
-    -e 's/\[([^]]+)\]\([^)]+\)/\1/g' \
-    -e '/^[[:space:]]*$/d' \
-    -e '/^\|/d' | head -60 | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-2000)
-
-[[ -z "$CLEAN" ]] && exit 0
+# Read plan, truncate to limits — server handles markdown cleanup
+TEXT=$(head -"$MAX_PLAN_LINES" "$PLAN_FILE" | cut -c1-"$MAX_PLAN_CHARS")
+[[ -z "$TEXT" ]] && exit 0
 
 (
-    curl -s -X POST "$KOKORO_URL/speak-long" \
+    curl -s -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
-        -d "$(jq -n --arg text "$CLEAN" '{text: $text}')" \
+        -d "$(jq -n --arg text "$TEXT" '{text: $text}')" \
         --max-time 120 \
         2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -i pipe:0 2>/dev/null
 ) &

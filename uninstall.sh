@@ -2,24 +2,44 @@
 set -euo pipefail
 
 # Claude Code TTS — Uninstaller
+# Supports macOS (launchd) and Linux (systemd).
 
 INSTALL_DIR="$HOME/.local/share/claude-code-tts"
-PLIST_NAME="com.$(whoami).kokoro-tts"
-PLIST_FILE="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
+SERVICE_NAME="kokoro-tts"
+PLATFORM="$(uname -s)"
 
 echo "=== Claude Code TTS Uninstaller ==="
 echo ""
 
-# Stop daemon
-if launchctl list | grep -q "$PLIST_NAME"; then
-    echo "Stopping daemon..."
-    launchctl unload "$PLIST_FILE" 2>/dev/null || true
-fi
+# Stop and remove daemon (platform-specific)
+if [[ "$PLATFORM" == "Darwin" ]]; then
+    PLIST_NAME="com.$(whoami).${SERVICE_NAME}"
+    PLIST_FILE="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
 
-# Remove plist
-if [[ -f "$PLIST_FILE" ]]; then
-    rm "$PLIST_FILE"
-    echo "  Removed LaunchAgent."
+    if launchctl list 2>/dev/null | grep -q "$PLIST_NAME"; then
+        echo "Stopping daemon..."
+        launchctl unload "$PLIST_FILE" 2>/dev/null || true
+    fi
+
+    if [[ -f "$PLIST_FILE" ]]; then
+        rm "$PLIST_FILE"
+        echo "  Removed LaunchAgent."
+    fi
+
+elif [[ "$PLATFORM" == "Linux" ]]; then
+    SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+
+    if systemctl --user is-active "$SERVICE_NAME" &>/dev/null; then
+        echo "Stopping daemon..."
+        systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+        systemctl --user disable "$SERVICE_NAME" 2>/dev/null || true
+    fi
+
+    if [[ -f "$SERVICE_FILE" ]]; then
+        rm "$SERVICE_FILE"
+        systemctl --user daemon-reload 2>/dev/null || true
+        echo "  Removed systemd service."
+    fi
 fi
 
 # Remove install directory (venv, server, models)
