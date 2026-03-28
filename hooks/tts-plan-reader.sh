@@ -30,12 +30,15 @@ PLAN_FILE=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | head -1)
 TEXT=$(head -"$MAX_PLAN_LINES" "$PLAN_FILE" | cut -c1-"$MAX_PLAN_CHARS")
 [[ -z "$TEXT" ]] && exit 0
 
+# Stop any existing TTS playback
+pkill -f "ffplay.*claude-tts" 2>/dev/null
+
 (
     curl -s -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
         -d "$(jq -n --arg text "$TEXT" '{text: $text}')" \
         --max-time 120 \
-        2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -i pipe:0 2>/dev/null
+        2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -f wav -window_title claude-tts -i pipe:0 2>/dev/null
 ) &
 
 exit 0

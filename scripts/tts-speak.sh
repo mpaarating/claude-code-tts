@@ -26,12 +26,15 @@ if ! curl -s --max-time 2 "$KOKORO_URL/health" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Stop any existing TTS playback
+pkill -f "ffplay.*claude-tts" 2>/dev/null
+
 echo "Speaking..."
 
 curl -s -X POST "$KOKORO_URL/speak" \
     -H "Content-Type: application/json" \
     -d "$(jq -n --arg text "$TEXT" '{text: $text}')" \
     --max-time 120 \
-    2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -i pipe:0 2>/dev/null
+    2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -f wav -window_title claude-tts -i pipe:0 2>/dev/null
 
 echo "Done."

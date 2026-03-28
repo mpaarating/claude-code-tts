@@ -127,7 +127,8 @@ mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR"
 cp "$REPO_DIR/hooks/tts-speak.sh" "$HOOKS_DIR/tts-speak.sh"
 cp "$REPO_DIR/hooks/tts-plan-reader.sh" "$HOOKS_DIR/tts-plan-reader.sh"
 cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
-chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$SCRIPTS_DIR/tts-speak.sh"
+cp "$REPO_DIR/scripts/tts-stop.sh" "$SCRIPTS_DIR/tts-stop.sh"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh"
 echo "  Hooks and scripts installed."
 
 # --- Create daemon (platform-specific) ---
