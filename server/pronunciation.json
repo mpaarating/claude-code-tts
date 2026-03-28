@@ -93,5 +93,20 @@
     ["||", " or "],
     ["::", " "],
     ["...", " "]
-  ]
+  ],
+  "tone_voices": {
+    "error":      {"voice": "am_adam",   "speed": 0.9},
+    "question":   {"voice": "af_bella",  "speed": 1.05},
+    "completion": {"voice": "af_heart",  "speed": 1.0},
+    "warning":    {"voice": "am_adam",   "speed": 0.95}
+  },
+  "agent_voices": {
+    "planner":     {"voice": "am_michael", "speed": 1.0},
+    "orchestrator":{"voice": "am_michael", "speed": 1.0},
+    "reviewer":    {"voice": "af_bella",   "speed": 1.0},
+    "architect":   {"voice": "af_bella",   "speed": 0.95},
+    "nitpicker":   {"voice": "af_bella",   "speed": 1.05},
+    "researcher":  {"voice": "af_heart",   "speed": 1.0},
+    "contrarian":  {"voice": "am_adam",    "speed": 0.95}
+  }
 }

@@ -20,10 +20,18 @@ The default mode is **silent**. You ask Claude to "read that to me" when you wan
 
 - **On-demand** — say "read that to me" and Claude speaks its last response
 - **Auto-speak sessions** — say "voice on" for hands-free mode (speaks questions, completions, errors; stays silent during code)
-- **Plan reader** — automatically reads plans aloud at the approval prompt, where you can't type commands
+- **Smart filtering** — skips trivial responses ("Done.", "Got it.") and code-heavy output automatically
+- **Plan reader** — automatically reads plans aloud at the approval prompt
+- **Notification chimes** — system sounds for errors, completions, questions, and warnings
+- **Workflow notifications** — speaks build/test/deploy results ("Tests passed, 47 passed")
+- **Tone routing** — errors use a slower, deeper voice; questions use a brighter voice
+- **Multi-agent voices** — distinct voices for different agent types (architect, planner, reviewer)
+- **MCP server** — Claude calls TTS directly as a tool, no CLAUDE.md instructions needed
+- **Karaoke mode** — word-by-word terminal highlighting synced to audio playback
+- **Conversation log** — queryable history of everything spoken (`tts-log --today`)
 - **Developer-aware** — pronounces acronyms correctly (API, CLI, JWT, OAuth), expands units (15ms → "15 milliseconds"), skips code blocks
-- **Customizable** — edit `pronunciation.json` to change how any term is spoken
-- **Long-form** — long responses are chunked into seamless audio with natural pacing
+- **Customizable** — edit `pronunciation.json` to change pronunciations, voice mappings, and tone routing
+- **Global hotkeys** — optional skhd/sxhkd config for system-wide TTS control
 - **Zero cost** — runs 100% locally on your machine
 
 ## Requirements
@@ -87,11 +95,36 @@ Add to your `~/.claude/settings.json`:
           "command": "bash ~/.claude/hooks/tts-plan-reader.sh",
           "timeout": 5
         }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{
+          "type": "command",
+          "command": "bash ~/.claude/hooks/tts-workflow.sh",
+          "timeout": 10
+        }]
       }
     ]
   }
 }
 ```
+
+### MCP server (optional)
+
+Add to your `~/.claude/settings.json` for direct tool access:
+
+```json
+{
+  "mcpServers": {
+    "tts": {
+      "command": "~/.local/share/claude-code-tts/venv/bin/python3",
+      "args": ["~/.local/share/claude-code-tts/mcp-server.py"]
+    }
+  }
+}
+```
+
+This gives Claude `speak`, `speak_karaoke`, `stop`, and `status` tools.
 
 ### Teaching Claude about voice
 
@@ -222,7 +255,15 @@ Edit `~/.local/share/claude-code-tts/pronunciation.json` to change how terms are
   "symbols": [
     ["=>", " arrow "],
     ["&&", " and "]
-  ]
+  ],
+  "tone_voices": {
+    "error": {"voice": "am_adam", "speed": 0.9},
+    "question": {"voice": "af_bella", "speed": 1.05}
+  },
+  "agent_voices": {
+    "architect": {"voice": "af_bella", "speed": 0.95},
+    "planner": {"voice": "am_michael", "speed": 1.0}
+  }
 }
 ```
 
@@ -263,7 +304,14 @@ curl -s -X POST http://localhost:7723/speak \
 | `text` | string | required | Text to speak |
 | `voice` | string | `af_heart` | Voice ID |
 | `speed` | float | `1.0` | Speed multiplier |
-| `mode` | string | `"auto"` | `"auto"` (full text) or `"summary"` (first 3 sentences) |
+| `mode` | string | — | `"summary"` for auto-speak (first 3 sentences, skips trivial) |
+| `agent` | string | — | Agent type for voice selection (`"architect"`, `"planner"`, etc.) |
+
+**Response headers:**
+
+| Header | Description |
+|--------|-------------|
+| `X-TTS-Tone` | Detected tone: `error`, `question`, `completion`, `warning` |
 
 ### `GET /health`
 
@@ -286,15 +334,23 @@ The daemon runs at nice priority 10 — it yields to your foreground apps. The C
 ```
 claude-code-tts/
 ├── server/
-│   ├── kokoro-server.py      # HTTP daemon (168 lines)
-│   ├── preprocess.py          # Text normalization for TTS (267 lines)
-│   └── pronunciation.json     # Customizable pronunciation maps
+│   ├── kokoro-server.py       # HTTP daemon
+│   ├── preprocess.py          # Text normalization, classification, tone routing
+│   ├── mcp-server.py          # MCP server (speak/stop/status tools)
+│   └── pronunciation.json     # Customizable pronunciation + voice maps
 ├── hooks/
-│   ├── tts-speak.sh           # Claude Code Stop hook (auto-speak)
-│   └── tts-plan-reader.sh     # Plan approval auto-reader
+│   ├── tts-speak.sh           # Stop hook (auto-speak with chimes)
+│   ├── tts-plan-reader.sh     # Plan approval auto-reader
+│   └── tts-workflow.sh        # Build/test/deploy result notifications
 ├── scripts/
 │   ├── tts-speak.sh           # On-demand "read that to me"
-│   └── tts-stop.sh            # Stop current audio playback
+│   ├── tts-stop.sh            # Stop current audio
+│   ├── tts-chime.sh           # Play notification chime by tone
+│   ├── tts-karaoke.sh         # Word-highlighted playback
+│   └── tts-log.sh             # Query conversation history
+├── config/
+│   ├── skhdrc                 # macOS global hotkeys (skhd)
+│   └── sxhkdrc                # Linux global hotkeys (sxhkd)
 ├── install.sh                 # One-command installer (macOS + Linux)
 └── uninstall.sh               # Clean removal
 ```
