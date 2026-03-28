@@ -1,0 +1,11 @@
+# Claude Code TTS — global hotkeys (sxhkd, Linux)
+# Install: sudo apt install sxhkd
+# Copy to: ~/.config/sxhkd/sxhkdrc (or append to existing)
+
+# Read clipboard aloud
+ctrl + shift + r
+    xclip -selection clipboard -o | bash ~/.claude/scripts/tts-speak.sh
+
+# Stop current audio
+ctrl + shift + s
+    bash ~/.claude/scripts/tts-stop.sh

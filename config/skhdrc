@@ -1,0 +1,19 @@
+# Claude Code TTS — global hotkeys (skhd)
+# Install: brew install skhd && skhd --start-service
+# Copy to: ~/.config/skhd/skhdrc (or append to existing)
+
+# Read clipboard aloud
+ctrl + shift - r : pbpaste | bash ~/.claude/scripts/tts-speak.sh
+
+# Stop current audio
+ctrl + shift - s : bash ~/.claude/scripts/tts-stop.sh
+
+# Toggle voice mode
+ctrl + shift - v : \
+    if [ "$CLAUDE_TTS" = "auto" ]; then \
+        export CLAUDE_TTS=off; \
+        afplay /System/Library/Sounds/Basso.aiff; \
+    else \
+        export CLAUDE_TTS=auto; \
+        afplay /System/Library/Sounds/Glass.aiff; \
+    fi
