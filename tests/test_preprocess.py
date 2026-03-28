@@ -280,6 +280,30 @@ class TestShouldSpeak:
         lines = ["text"] * 3 + ["```"] + ["code"] * 5 + ["```"]
         assert should_speak("\n".join(lines)) is False
 
+    def test_trivial_done(self):
+        assert should_speak("Done.") is False
+
+    def test_trivial_got_it(self):
+        assert should_speak("Got it.") is False
+
+    def test_trivial_file_created(self):
+        assert should_speak("File created.") is False
+
+    def test_trivial_command_completed(self):
+        assert should_speak("Command completed.") is False
+
+    def test_trivial_running(self):
+        assert should_speak("Running the tests now.") is False
+
+    def test_short_question_speaks(self):
+        assert should_speak("Should I continue with the refactor?") is True
+
+    def test_substantive_short_response(self):
+        assert should_speak("The auth token expired. You need to refresh it.") is True
+
+    def test_changes_committed(self):
+        assert should_speak("Changes committed.") is False
+
 
 # ---------------------------------------------------------------------------
 # split_sentences

@@ -14,6 +14,19 @@ SUMMARY_MAX_SENTENCES = 3
 SUMMARY_MAX_CHARS = 800
 MIN_SPEAKABLE_LEN = 20
 CODE_RATIO_THRESHOLD = 40  # percent — skip if response is mostly code
+# Short responses under this length must contain a question to be spoken —
+# trivial acknowledgments ("Done.", "Got it.") aren't worth hearing.
+SUBSTANCE_THRESHOLD = 80
+
+# Trivial patterns that add noise in auto-speak mode.
+# Checked against the full raw text (before preprocessing).
+_TRIVIAL_PATTERNS = [
+    r"^(done|got it|ok|okay|sure|yes|no|noted|understood|will do)\.?$",
+    r"^(file|directory|branch) (created|deleted|updated|renamed|moved)\.?$",
+    r"^command completed\.?$",
+    r"^changes? (saved|committed|staged|applied)\.?$",
+    r"^(running|starting|checking|reading|writing)\b",
+]
 
 # ---------------------------------------------------------------------------
 # Pronunciation / units / symbols — loaded from pronunciation.json if present,
@@ -274,7 +287,19 @@ def should_speak(text):
             code_lines += 1
 
     code_ratio = code_lines * 100 // total
-    return code_ratio <= CODE_RATIO_THRESHOLD
+    if code_ratio > CODE_RATIO_THRESHOLD:
+        return False
+
+    # Short, non-question responses are usually trivial acknowledgments
+    stripped = text.strip()
+    if len(stripped) < SUBSTANCE_THRESHOLD and "?" not in stripped:
+        # Check against trivial patterns
+        first_line = stripped.split("\n")[0].strip()
+        for pattern in _TRIVIAL_PATTERNS:
+            if re.match(pattern, first_line, re.IGNORECASE):
+                return False
+
+    return True
 
 
 def summarize(text):
