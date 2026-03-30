@@ -106,6 +106,7 @@ class TTSHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
         self.send_header("Content-Length", str(len(wav_bytes)))
+        self.send_header("X-TTS-Duration", f"{len(samples) / sample_rate:.3f}")
         if tone:
             self.send_header("X-TTS-Tone", tone)
         self.end_headers()

@@ -140,7 +140,8 @@ cp "$REPO_DIR/scripts/tts-stop.sh" "$SCRIPTS_DIR/tts-stop.sh"
 cp "$REPO_DIR/scripts/tts-chime.sh" "$SCRIPTS_DIR/tts-chime.sh"
 cp "$REPO_DIR/scripts/tts-log.sh" "$SCRIPTS_DIR/tts-log.sh"
 cp "$REPO_DIR/scripts/tts-karaoke.sh" "$SCRIPTS_DIR/tts-karaoke.sh"
-chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh" "$SCRIPTS_DIR/tts-karaoke.sh"
+cp "$REPO_DIR/scripts/karaoke_display.py" "$SCRIPTS_DIR/karaoke_display.py"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh" "$SCRIPTS_DIR/tts-karaoke.sh" "$SCRIPTS_DIR/karaoke_display.py"
 echo "  Hooks and scripts installed."
 
 # --- Create daemon (platform-specific) ---

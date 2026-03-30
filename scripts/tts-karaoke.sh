@@ -1,14 +1,24 @@
 #!/bin/bash
-# Karaoke mode — speak text with word-by-word terminal highlighting.
+# Karaoke mode — display text for reading while audio plays in background.
 #
 # Usage: tts-karaoke.sh "text to speak"
 #    or: echo "text" | tts-karaoke.sh
 #
-# Shows the currently spoken word highlighted in the terminal,
-# advancing in sync with audio playback.
+# Prints the text so the user can read along while hearing it spoken.
+# In a real terminal, adds word-by-word ANSI highlighting (--animate flag).
 
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DISPLAY_SCRIPT="$SCRIPT_DIR/karaoke_display.py"
+HEADER_FILE="/tmp/claude-tts-karaoke-headers.txt"
 AUDIO_FILE="/tmp/claude-tts-karaoke.wav"
+
+# Parse flags
+ANIMATE=false
+if [[ "$1" == "--animate" ]]; then
+    ANIMATE=true
+    shift
+fi
 
 # Get text from argument or stdin
 if [[ -n "$1" ]]; then
@@ -28,91 +38,48 @@ fi
 # Stop existing playback
 pkill -f "ffplay.*claude-tts" 2>/dev/null
 
-# Generate audio and save to file (need duration info)
-HTTP_CODE=$(curl -s -o "$AUDIO_FILE" -w '%{http_code}' -X POST "$KOKORO_URL/speak" \
+# Cleanup on exit
+FFPLAY_PID=""
+cleanup() {
+    [[ -n "$FFPLAY_PID" ]] && kill "$FFPLAY_PID" 2>/dev/null
+    rm -f "$HEADER_FILE" "$AUDIO_FILE"
+}
+trap cleanup EXIT
+
+# Generate audio — save WAV + response headers
+HTTP_CODE=$(curl -s -o "$AUDIO_FILE" -D "$HEADER_FILE" -w '%{http_code}' \
+    -X POST "$KOKORO_URL/speak" \
     -H "Content-Type: application/json" \
     -d "$(jq -n --arg text "$TEXT" '{text: $text}')" \
     --max-time 30 2>/dev/null)
 
 [[ "$HTTP_CODE" != "200" || ! -s "$AUDIO_FILE" ]] && { echo "TTS generation failed"; exit 1; }
 
-# Get audio duration in seconds using ffprobe
-DURATION=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$AUDIO_FILE" 2>/dev/null)
-[[ -z "$DURATION" ]] && { echo "Could not determine audio duration"; exit 1; }
+DURATION=$(grep -i "X-TTS-Duration:" "$HEADER_FILE" | tr -d '\r' | awk '{print $2}')
 
-# Preprocess text for display (strip markdown simply)
-DISPLAY_TEXT=$(echo "$TEXT" | sed 's/```[^`]*```//g; s/`[^`]*`//g; s/\*\*\([^*]*\)\*\*/\1/g; s/\*\([^*]*\)\*/\1/g; s/^#* //; s/^[-*] //')
-
-# Split into words
-IFS=' ' read -ra WORDS <<< "$DISPLAY_TEXT"
-WORD_COUNT=${#WORDS[@]}
-
-[[ "$WORD_COUNT" -eq 0 ]] && exit 0
-
-# Calculate time per word (seconds, as float via awk)
-TIME_PER_WORD=$(awk "BEGIN {printf \"%.4f\", $DURATION / $WORD_COUNT}")
-
-# ANSI escape codes
-BOLD='\033[1m'
-DIM='\033[2m'
-UNDERLINE='\033[4m'
-HIGHLIGHT='\033[1;36m'  # bold cyan
-RESET='\033[0m'
-
-# Start audio playback in background
+# Play audio in background
 ffplay -nodisp -autoexit -loglevel quiet -window_title claude-tts "$AUDIO_FILE" 2>/dev/null &
 FFPLAY_PID=$!
 
-# Hide cursor
-printf '\033[?25l'
+# Strip markdown for display
+DISPLAY_TEXT=$(echo "$TEXT" | sed '
+    s/```[^`]*```//g
+    s/`[^`]*`//g
+    s/\*\*\([^*]*\)\*\*/\1/g
+    s/\*\([^*]*\)\*/\1/g
+    s/^#* //
+    s/^[-*] //
+')
 
-# Cleanup on exit
-cleanup() {
-    printf '\033[?25h'  # show cursor
+# Display text — animated ANSI in terminal, plain text otherwise
+if [[ "$ANIMATE" == "true" ]] && [[ -n "$DURATION" ]] && [[ -e /dev/tty ]] && python3 -c "open('/dev/tty','w')" 2>/dev/null; then
+    echo "$DISPLAY_TEXT" | python3 "$DISPLAY_SCRIPT" --duration "$DURATION"
+else
     echo ""
-    rm -f "$AUDIO_FILE"
-}
-trap cleanup EXIT
-
-# Display words with highlighting
-START_TIME=$(date +%s.%N 2>/dev/null || python3 -c "import time; print(f'{time.time():.6f}')")
-
-for i in "${!WORDS[@]}"; do
-    # Check if ffplay is still running
-    if ! kill -0 "$FFPLAY_PID" 2>/dev/null; then
-        break
-    fi
-
-    # Clear line and render: dim past words, highlight current, dim future
-    printf '\r\033[K'
-
-    # Show a window of words around the current one (±8 words)
-    WINDOW_START=$((i - 8))
-    WINDOW_END=$((i + 8))
-    [[ $WINDOW_START -lt 0 ]] && WINDOW_START=0
-    [[ $WINDOW_END -ge $WORD_COUNT ]] && WINDOW_END=$((WORD_COUNT - 1))
-
-    for j in $(seq "$WINDOW_START" "$WINDOW_END"); do
-        if [[ $j -lt $i ]]; then
-            printf "${DIM}%s${RESET} " "${WORDS[$j]}"
-        elif [[ $j -eq $i ]]; then
-            printf "${HIGHLIGHT}%s${RESET} " "${WORDS[$j]}"
-        else
-            printf "%s " "${WORDS[$j]}"
-        fi
-    done
-
-    # Progress indicator
-    PROGRESS=$(( (i + 1) * 100 / WORD_COUNT ))
-    printf "  ${DIM}[%d%%]${RESET}" "$PROGRESS"
-
-    # Wait for next word timing
-    # Use python for sub-second sleep since bash sleep only does integers on some systems
-    python3 -c "import time; time.sleep($TIME_PER_WORD)" 2>/dev/null || sleep 1
-done
+    echo "$DISPLAY_TEXT"
+    echo ""
+fi
 
 # Wait for audio to finish
 wait "$FFPLAY_PID" 2>/dev/null
-
-printf '\r\033[K'
-echo "Done."
+FFPLAY_PID=""

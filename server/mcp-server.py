@@ -116,17 +116,16 @@ def _speak(text, voice=None, speed=None, mode=None, agent=None):
 
 
 def _speak_karaoke(text):
-    """Launch the karaoke script for word-highlighted playback."""
-    karaoke_script = os.path.join(os.path.expanduser("~"), ".claude", "scripts", "tts-karaoke.sh")
-    if not os.path.isfile(karaoke_script):
-        return {"success": False, "error": "tts-karaoke.sh not found. Run install.sh first."}
+    """Speak text and return it for display — user reads along while hearing it.
 
-    subprocess.Popen(
-        ["bash", karaoke_script, text],
-        stdout=None, stderr=None,
-        start_new_session=True,
-    )
-    return {"success": True, "mode": "karaoke"}
+    Plays audio non-blocking (like regular speak), returns the text so
+    Claude can display it inline.
+    """
+    result = _speak(text)
+    if result.get("success") and result.get("spoken"):
+        result["display_text"] = text
+        result["mode"] = "karaoke"
+    return result
 
 
 def _stop():
