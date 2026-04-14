@@ -58,6 +58,29 @@ elif echo "$TOOL_INPUT" | grep -qE 'git push'; then
         TONE="completion"
     fi
 
+# Git diff / log
+elif echo "$TOOL_INPUT" | grep -qE 'git (diff|log|show)'; then
+    # Try stat summary line first (present with --stat or at end of some outputs)
+    STAT_LINE=$(echo "$TOOL_OUTPUT" | grep -E '^\s*[0-9]+ files? changed' | tail -1)
+    if [[ -n "$STAT_LINE" ]]; then
+        SUMMARY="$STAT_LINE"
+    else
+        # Extract file names from diff headers
+        FILES=$(echo "$TOOL_OUTPUT" | grep -oE 'diff --git a/(.+) b/' | sed 's|diff --git a/||;s| b/$||' | xargs -I{} basename {} 2>/dev/null)
+        FILE_COUNT=$(echo "$FILES" | grep -c . 2>/dev/null || echo 0)
+        if [[ "$FILE_COUNT" -gt 0 ]]; then
+            # List up to 3 file names, then "and N more"
+            FILE_LIST=$(echo "$FILES" | head -3 | paste -sd ',' - | sed 's/,/, /g')
+            if [[ "$FILE_COUNT" -gt 3 ]]; then
+                REMAINING=$((FILE_COUNT - 3))
+                SUMMARY="Diff shows $FILE_COUNT files: $FILE_LIST, and $REMAINING more."
+            else
+                SUMMARY="Diff shows $FILE_COUNT files: $FILE_LIST."
+            fi
+        fi
+    fi
+    [[ -n "$SUMMARY" ]] && TONE="completion"
+
 # Lint
 elif echo "$TOOL_INPUT" | grep -qE '(eslint|ruff|pylint|clippy)'; then
     if echo "$TOOL_OUTPUT" | grep -qiE '(error|warning)'; then

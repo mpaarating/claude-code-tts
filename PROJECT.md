@@ -9,9 +9,9 @@ Reading long Claude Code responses — plans, research, explanations — causes 
 - [x] On-demand and auto-speak modes working
 - [x] Streaming audio with <300ms first-word latency
 - [x] Multi-agent voice routing and emotion/tone awareness
-- [ ] Installer handles full setup without manual JSON editing
-- [ ] Voice-controlled session settings (speed, volume)
-- [ ] Content-aware hooks for diffs and errors
+- [x] Installer handles full setup without manual JSON editing
+- [x] Voice-controlled session settings (speed, volume)
+- [x] Content-aware hooks for diffs and errors
 
 ## Phases
 
@@ -41,7 +41,7 @@ Installer auto-config, error summarization hook, volume/speed voice control, dif
 | 1 | Installer auto-configures settings.json | P1 | Next | done | jq merge into existing settings.json, atomic write, --no-hooks opt-out |
 | 2 | Error summarization hook | P1 | Next | done | Generic catch-all in tts-workflow.sh for non-zero exit codes on unrecognized commands |
 | 3 | Volume/speed control via voice | P1 | Next | done | KOKORO_SPEED + KOKORO_VOLUME env vars, passed through all scripts/hooks to daemon and ffplay |
-| 4 | Diff narration | P2 | Next | not started | Read git diffs meaningfully — summarize what changed, not raw +/- lines |
+| 4 | Diff narration | P2 | Next | done | Extracts file names from diff headers or stat summary line, speaks concise summary |
 | 5 | Bidirectional voice (STT + TTS) | P2 | Later | not started | GitHub #11 — ambitious |
 | 6 | Voice cloning | P2 | Later | not started | GitHub #10 — ambitious |
 | 7 | Require signed commits | P2 | Later | not started | Repo security |
@@ -51,7 +51,7 @@ Installer auto-config, error summarization hook, volume/speed voice control, dif
 
 - [x] Can the installer safely merge hook config into an existing settings.json without clobbering other settings? (jq merge strategy) — Yes, `jq += []` appends safely
 - [x] What's the best UX for voice-controlled speed/volume — env var, daemon endpoint, or both? — Env vars (KOKORO_SPEED, KOKORO_VOLUME) passed through to daemon/ffplay. No new endpoints needed.
-- [ ] For diff narration, should the hook trigger on `git diff` output or on commit/PR events?
+- [x] For diff narration, should the hook trigger on `git diff` output or on commit/PR events? — Triggers on `git diff/log/show` commands in tts-workflow.sh, extracts file names or stat summary
 
 ## Key Decisions
 
@@ -63,3 +63,4 @@ Installer auto-config, error summarization hook, volume/speed voice control, dif
 | 2026-04-14 | Installer auto-config implemented | jq merge with atomic write, confirmation prompt, --no-hooks flag, pre-validation of existing JSON |
 | 2026-04-14 | Error summarization added to workflow hook | Extended tts-workflow.sh with generic catch-all for non-zero exit codes |
 | 2026-04-14 | Speed/volume control implemented | KOKORO_SPEED and KOKORO_VOLUME env vars threaded through all 4 scripts/hooks |
+| 2026-04-14 | Diff narration implemented (Option A) | Simple file name extraction from diff headers + stat line fallback. Can upgrade to semantic summaries later. |
