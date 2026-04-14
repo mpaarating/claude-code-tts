@@ -15,10 +15,12 @@ VOICE="${KOKORO_VOICE:-af_heart}"
 PLATFORM="$(uname -s)"
 MAX_WAIT_SECS=20
 WITH_HOTKEYS=false
+AUTO_HOOKS=true
 
 for arg in "$@"; do
     case "$arg" in
         --with-hotkeys) WITH_HOTKEYS=true ;;
+        --no-hooks)     AUTO_HOOKS=false ;;
     esac
 done
 
@@ -254,34 +256,65 @@ echo "Configuring Claude Code hooks..."
 
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
-if [[ -f "$SETTINGS_FILE" ]]; then
-    if grep -q "tts-speak.sh" "$SETTINGS_FILE"; then
-        echo "  Hooks already configured in settings.json."
+# Build hook JSON entries
+STOP_HOOK=$(jq -n --arg cmd "$HOOKS_DIR/tts-speak.sh" \
+    '{"hooks":[{"type":"command","command":$cmd,"timeout":15}]}')
+
+POST_HOOK=$(jq -n --arg cmd "$HOOKS_DIR/tts-plan-reader.sh" \
+    '{"matcher":"ExitPlanMode","hooks":[{"type":"command","command":$cmd,"timeout":5}]}')
+
+if [[ -f "$SETTINGS_FILE" ]] && grep -q "tts-speak.sh" "$SETTINGS_FILE"; then
+    echo "  Hooks already configured in settings.json."
+elif [[ "$AUTO_HOOKS" == "false" ]]; then
+    echo "  Skipping hook configuration (--no-hooks)."
+    echo ""
+    echo "  To configure manually, add to ~/.claude/settings.json:"
+    echo "  Stop:        $STOP_HOOK"
+    echo "  PostToolUse: $POST_HOOK"
+elif [[ -f "$SETTINGS_FILE" ]]; then
+    if ! jq empty "$SETTINGS_FILE" 2>/dev/null; then
+        echo "  WARNING: settings.json is not valid JSON. Skipping auto-config."
+        echo "  Fix the file and re-run, or add hooks manually."
     else
-        echo ""
-        echo "  Add these hooks to your ~/.claude/settings.json manually:"
-        echo ""
-        echo '  In the "Stop" array:'
-        echo '    {'
-        echo '      "hooks": [{'
-        echo '        "type": "command",'
-        echo "        \"command\": \"bash $HOOKS_DIR/tts-speak.sh\","
-        echo '        "timeout": 15'
-        echo '      }]'
-        echo '    }'
-        echo ""
-        echo '  In the "PostToolUse" array:'
-        echo '    {'
-        echo '      "matcher": "ExitPlanMode",'
-        echo '      "hooks": [{'
-        echo '        "type": "command",'
-        echo "        \"command\": \"bash $HOOKS_DIR/tts-plan-reader.sh\","
-        echo '        "timeout": 5'
-        echo '      }]'
-        echo '    }'
+        echo -n "  Configure TTS hooks in settings.json? [Y/n] "
+        read -r REPLY
+        if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+            echo "  Skipped."
+        else
+            TMP_FILE=$(mktemp)
+            jq --argjson stop "$STOP_HOOK" --argjson post "$POST_HOOK" \
+                '.hooks.Stop += [$stop] | .hooks.PostToolUse += [$post]' \
+                "$SETTINGS_FILE" > "$TMP_FILE"
+
+            if jq empty "$TMP_FILE" 2>/dev/null; then
+                mv "$TMP_FILE" "$SETTINGS_FILE"
+                echo "  Hooks added to settings.json."
+            else
+                rm -f "$TMP_FILE"
+                echo "  ERROR: Generated invalid JSON. Settings unchanged."
+            fi
+        fi
     fi
 else
-    echo "  No settings.json found. Create one or add hooks manually."
+    echo "  No settings.json found."
+    echo -n "  Create settings.json with TTS hooks? [Y/n] "
+    read -r REPLY
+    if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+        echo "  Skipped."
+    else
+        mkdir -p "$(dirname "$SETTINGS_FILE")"
+        TMP_FILE=$(mktemp)
+        jq -n --argjson stop "$STOP_HOOK" --argjson post "$POST_HOOK" \
+            '{"hooks":{"Stop":[$stop],"PostToolUse":[$post]}}' > "$TMP_FILE"
+
+        if jq empty "$TMP_FILE" 2>/dev/null; then
+            mv "$TMP_FILE" "$SETTINGS_FILE"
+            echo "  Created settings.json with TTS hooks."
+        else
+            rm -f "$TMP_FILE"
+            echo "  ERROR: Failed to create settings.json."
+        fi
+    fi
 fi
 
 # --- Add CLAUDE.md instructions ---
@@ -296,7 +329,7 @@ if [[ -f "$CLAUDE_MD" ]] && ! grep -q "Voice Output" "$CLAUDE_MD"; then
 
 **On-demand**: When the user says "read that to me", "say that", "speak", or similar:
 ```bash
-bash ~/.claude/scripts/tts-speak.sh "text to speak"
+~/.claude/scripts/tts-speak.sh "text to speak"
 ```
 The script handles markdown stripping, chunking, and seamless playback. Runs locally, free.
 

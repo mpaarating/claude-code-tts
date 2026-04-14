@@ -61,7 +61,7 @@ The installer:
 4. Copies hooks and scripts to `~/.claude/`
 5. Plays a test sentence to verify
 
-After installing, add the hooks to `~/.claude/settings.json` (the installer prints the exact JSON).
+The installer will offer to configure hooks in `~/.claude/settings.json` automatically. Pass `--no-hooks` to skip and configure manually.
 
 ### Hook configuration
 
@@ -74,7 +74,7 @@ Add to your `~/.claude/settings.json`:
       {
         "hooks": [{
           "type": "command",
-          "command": "bash ~/.claude/hooks/tts-speak.sh",
+          "command": "~/.claude/hooks/tts-speak.sh",
           "timeout": 15
         }]
       }
@@ -84,7 +84,7 @@ Add to your `~/.claude/settings.json`:
         "matcher": "ExitPlanMode",
         "hooks": [{
           "type": "command",
-          "command": "bash ~/.claude/hooks/tts-plan-reader.sh",
+          "command": "~/.claude/hooks/tts-plan-reader.sh",
           "timeout": 5
         }]
       }
@@ -92,6 +92,23 @@ Add to your `~/.claude/settings.json`:
   }
 }
 ```
+
+### Permissions
+
+When Claude speaks on-demand, it runs the TTS scripts via the Bash tool. Rather than whitelisting all bash commands, you can allow just the specific scripts in your `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/.claude/scripts/tts-speak.sh:*)",
+      "Bash(~/.claude/scripts/tts-stop.sh:*)"
+    ]
+  }
+}
+```
+
+The scripts are installed as executable, so no `bash` prefix is needed.
 
 ### Teaching Claude about voice
 
@@ -102,19 +119,27 @@ Add to your `~/.claude/CLAUDE.md`:
 
 **On-demand**: When the user says "read that to me", "say that", "speak", or similar:
 \`\`\`bash
-bash ~/.claude/scripts/tts-speak.sh "text to speak"
+~/.claude/scripts/tts-speak.sh "text to speak"
 \`\`\`
 The script handles chunking and seamless playback. Runs locally, free.
 
 **Stop playback**: When the user says "stop", "mute", or "quiet":
 \`\`\`bash
-bash ~/.claude/scripts/tts-stop.sh
+~/.claude/scripts/tts-stop.sh
 \`\`\`
 
 **Session voice toggle**: "voice on" / "voice off":
 \`\`\`bash
 export CLAUDE_TTS=auto   # auto-speak conversational responses
 export CLAUDE_TTS=off    # back to silent
+\`\`\`
+
+**Speed/volume**: "speak slower", "speak faster", "louder", "quieter":
+\`\`\`bash
+export KOKORO_SPEED=0.8   # slower (range: 0.5 to 2.0, default 1.0)
+export KOKORO_SPEED=1.3   # faster
+export KOKORO_VOLUME=60   # quieter (range: 0 to 100, default 100)
+export KOKORO_VOLUME=100  # full volume
 \`\`\`
 ```
 
@@ -138,7 +163,7 @@ Interrupt audio at any time:
 
 > "Mute"
 
-Or directly: `bash ~/.claude/scripts/tts-stop.sh`
+Or directly: `~/.claude/scripts/tts-stop.sh`
 
 New audio automatically interrupts any currently playing audio — you don't need to stop manually before asking Claude to read something else.
 
@@ -201,6 +226,7 @@ Set in the launchd plist, systemd service, or your shell:
 | `KOKORO_PORT` | `7723` | Daemon listen port |
 | `KOKORO_VOICE` | `af_heart` | Voice ID ([available voices](https://github.com/thewh1teagle/kokoro-onnx#voices)) |
 | `KOKORO_SPEED` | `1.0` | Speech speed (0.5 = slow, 2.0 = fast) |
+| `KOKORO_VOLUME` | `100` | Playback volume (0 = mute, 100 = full) |
 | `CLAUDE_TTS` | `off` | `off` (silent), `auto` (speak conversational responses), `on` (speak everything) |
 
 ### Custom pronunciations

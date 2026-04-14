@@ -33,12 +33,15 @@ TEXT=$(head -"$MAX_PLAN_LINES" "$PLAN_FILE" | cut -c1-"$MAX_PLAN_CHARS")
 # Stop any existing TTS playback
 pkill -f "ffplay.*claude-tts" 2>/dev/null
 
+SPEED="${KOKORO_SPEED:-1.0}"
+VOLUME="${KOKORO_VOLUME:-100}"
+
 (
     curl -s -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
-        -d "$(jq -n --arg text "$TEXT" '{text: $text}')" \
+        -d "$(jq -n --arg text "$TEXT" --argjson speed "$SPEED" '{text: $text, speed: $speed}')" \
         --max-time 120 \
-        2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -f wav -window_title claude-tts -i pipe:0 2>/dev/null
+        2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -volume "$VOLUME" -f wav -window_title claude-tts -i pipe:0 2>/dev/null
 ) &
 
 exit 0

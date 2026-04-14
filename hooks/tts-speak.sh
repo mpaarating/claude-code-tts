@@ -41,10 +41,13 @@ pkill -f "ffplay.*claude-tts" 2>/dev/null
 (
     echo $$ > "$LOCK_FILE"
 
+    SPEED="${KOKORO_SPEED:-1.0}"
+    VOLUME="${KOKORO_VOLUME:-100}"
+
     # Use -D- to capture response headers (tone) alongside body
     RESPONSE=$(curl -s -D- -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
-        -d "$(jq -n --arg text "$MESSAGE" '{text: $text, mode: "summary"}')" \
+        -d "$(jq -n --arg text "$MESSAGE" --argjson speed "$SPEED" '{text: $text, mode: "summary", speed: $speed}')" \
         --max-time 30 \
         -o /tmp/claude-tts-audio.wav \
         2>/dev/null)
@@ -60,7 +63,7 @@ pkill -f "ffplay.*claude-tts" 2>/dev/null
 
     # Play speech if server returned audio (200), skip if 204 (trivial)
     if [[ "$HTTP_CODE" == "200" && -s /tmp/claude-tts-audio.wav ]]; then
-        ffplay -nodisp -autoexit -loglevel quiet -f wav -window_title claude-tts /tmp/claude-tts-audio.wav 2>/dev/null
+        ffplay -nodisp -autoexit -loglevel quiet -volume "$VOLUME" -f wav -window_title claude-tts /tmp/claude-tts-audio.wav 2>/dev/null
     fi
 
     rm -f "$LOCK_FILE" /tmp/claude-tts-audio.wav
