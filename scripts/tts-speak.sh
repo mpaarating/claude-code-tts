@@ -6,8 +6,18 @@
 # Usage: tts-speak.sh "text to speak"
 #    or: echo "text" | tts-speak.sh
 #    or: tts-speak.sh --file /path/to/file
+#    or: tts-speak.sh --dry-run "text"   # print what would be spoken, no audio
+#    or: tts-speak.sh --dry-run --summary "text"   # same, through the auto-speak summarizer
 
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
+
+DRY_RUN=0
+MODE=""
+while [[ "$1" == --dry-run || "$1" == --summary ]]; do
+    [[ "$1" == --dry-run ]] && DRY_RUN=1
+    [[ "$1" == --summary ]] && MODE="summary"
+    shift
+done
 
 # Get text from argument, stdin, or file
 if [[ "$1" == "--file" && -f "$2" ]]; then
@@ -24,6 +34,14 @@ fi
 if ! curl -s --max-time 2 "$KOKORO_URL/health" >/dev/null 2>&1; then
     echo "Kokoro daemon not running. Start with: launchctl load ~/Library/LaunchAgents/com.$(whoami).kokoro-tts.plist"
     exit 1
+fi
+
+if [[ "$DRY_RUN" == 1 ]]; then
+    curl -s -X POST "$KOKORO_URL/preprocess" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg text "$TEXT" --arg mode "$MODE" '{text: $text} + (if $mode == "" then {} else {mode: $mode} end)')" \
+        --max-time 10 | jq -r '"would_speak: \(.would_speak)  tone: \(.tone // "none")\n\(.text)"'
+    exit 0
 fi
 
 # Stop any existing TTS playback
