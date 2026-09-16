@@ -139,12 +139,13 @@ mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR"
 cp "$REPO_DIR/hooks/tts-speak.sh" "$HOOKS_DIR/tts-speak.sh"
 cp "$REPO_DIR/hooks/tts-plan-reader.sh" "$HOOKS_DIR/tts-plan-reader.sh"
 cp "$REPO_DIR/hooks/tts-workflow.sh" "$HOOKS_DIR/tts-workflow.sh"
+cp "$REPO_DIR/hooks/tts-notify.sh" "$HOOKS_DIR/tts-notify.sh"
 cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
 cp "$REPO_DIR/scripts/tts-stop.sh" "$SCRIPTS_DIR/tts-stop.sh"
 cp "$REPO_DIR/scripts/tts-chime.sh" "$SCRIPTS_DIR/tts-chime.sh"
 cp "$REPO_DIR/scripts/tts-log.sh" "$SCRIPTS_DIR/tts-log.sh"
 cp "$REPO_DIR/scripts/voice.sh" "$SCRIPTS_DIR/voice.sh"
-chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh" "$SCRIPTS_DIR/voice.sh"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$HOOKS_DIR/tts-notify.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh" "$SCRIPTS_DIR/voice.sh"
 echo "  Hooks and scripts installed."
 
 # --- Create daemon (platform-specific) ---
@@ -266,14 +267,20 @@ STOP_HOOK=$(jq -n --arg cmd "$HOOKS_DIR/tts-speak.sh" \
 POST_HOOK=$(jq -n --arg cmd "$HOOKS_DIR/tts-plan-reader.sh" \
     '{"matcher":"ExitPlanMode","hooks":[{"type":"command","command":$cmd,"timeout":5}]}')
 
+# No matcher: the script filters on notification_type itself, so it works on
+# builds that do not support matching Notification hooks by type.
+NOTIFY_HOOK=$(jq -n --arg cmd "$HOOKS_DIR/tts-notify.sh" \
+    '{"hooks":[{"type":"command","command":$cmd,"timeout":5}]}')
+
 if [[ -f "$SETTINGS_FILE" ]] && grep -q "tts-speak.sh" "$SETTINGS_FILE"; then
     echo "  Hooks already configured in settings.json."
 elif [[ "$AUTO_HOOKS" == "false" ]]; then
     echo "  Skipping hook configuration (--no-hooks)."
     echo ""
     echo "  To configure manually, add to ~/.claude/settings.json:"
-    echo "  Stop:        $STOP_HOOK"
-    echo "  PostToolUse: $POST_HOOK"
+    echo "  Stop:         $STOP_HOOK"
+    echo "  PostToolUse:  $POST_HOOK"
+    echo "  Notification: $NOTIFY_HOOK"
 elif [[ -f "$SETTINGS_FILE" ]]; then
     if ! jq empty "$SETTINGS_FILE" 2>/dev/null; then
         echo "  WARNING: settings.json is not valid JSON. Skipping auto-config."
@@ -285,8 +292,8 @@ elif [[ -f "$SETTINGS_FILE" ]]; then
             echo "  Skipped."
         else
             TMP_FILE=$(mktemp)
-            jq --argjson stop "$STOP_HOOK" --argjson post "$POST_HOOK" \
-                '.hooks.Stop += [$stop] | .hooks.PostToolUse += [$post]' \
+            jq --argjson stop "$STOP_HOOK" --argjson post "$POST_HOOK" --argjson notify "$NOTIFY_HOOK" \
+                '.hooks.Stop += [$stop] | .hooks.PostToolUse += [$post] | .hooks.Notification += [$notify]' \
                 "$SETTINGS_FILE" > "$TMP_FILE"
 
             if jq empty "$TMP_FILE" 2>/dev/null; then
@@ -307,8 +314,8 @@ else
     else
         mkdir -p "$(dirname "$SETTINGS_FILE")"
         TMP_FILE=$(mktemp)
-        jq -n --argjson stop "$STOP_HOOK" --argjson post "$POST_HOOK" \
-            '{"hooks":{"Stop":[$stop],"PostToolUse":[$post]}}' > "$TMP_FILE"
+        jq -n --argjson stop "$STOP_HOOK" --argjson post "$POST_HOOK" --argjson notify "$NOTIFY_HOOK" \
+            '{"hooks":{"Stop":[$stop],"PostToolUse":[$post],"Notification":[$notify]}}' > "$TMP_FILE"
 
         if jq empty "$TMP_FILE" 2>/dev/null; then
             mv "$TMP_FILE" "$SETTINGS_FILE"
@@ -397,6 +404,7 @@ echo "Usage:"
 echo "  On-demand:  Tell Claude 'read that to me'"
 echo "  Auto mode:  Tell Claude 'voice on' (or run ~/.claude/scripts/voice.sh on)"
 echo "  Plan mode:  Plans are automatically read aloud on approval prompt"
+echo "  Prompts:    Permission prompts are spoken when voice is on (TTS_NOTIFY_TYPES)"
 echo "  Stop:       Tell Claude 'voice off' (or run ~/.claude/scripts/voice.sh off)"
 echo "  Settings:   ~/.config/claude-code-tts/env (KOKORO_SPEED, KOKORO_VOLUME, TTS_CHIME_TONES)"
 echo ""

@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- Notification hook (`hooks/tts-notify.sh`): speaks a chime plus "<project>: Claude needs your permission to use <tool>" when a permission prompt appears and voice is on. Idle nudges are opt-in via `TTS_NOTIFY_TYPES`.
+
 ### Changed
+- The Stop hook stays silent for 15 s after an on-demand read finishes, so "read that to me" no longer plays the content and then Claude's reply about it.
 - Audio is streamed sentence by sentence: playback starts after the first sentence is synthesized (about 0.5-0.8 s) instead of after the whole response (2-4 s). Stopping playback stops synthesis.
 - Auto-speak summaries stop at the end of the opening paragraph. Headings, list intros, and footers below it are no longer read aloud.
 - The Stop hook reads voice state from `~/.local/state/claude-tts/state` (written by `scripts/voice.sh`) instead of the `CLAUDE_TTS` env var, which never reached hooks. Speed, volume, and chime tones come from `~/.config/claude-code-tts/env`.
