@@ -58,6 +58,7 @@ fi
 for f in "$HOME/.claude/hooks/tts-speak.sh" \
          "$HOME/.claude/hooks/tts-plan-reader.sh" \
          "$HOME/.claude/hooks/tts-workflow.sh" \
+         "$HOME/.claude/hooks/tts-notify.sh" \
          "$HOME/.claude/scripts/tts-speak.sh" \
          "$HOME/.claude/scripts/tts-chime.sh" \
          "$HOME/.claude/scripts/voice.sh" \

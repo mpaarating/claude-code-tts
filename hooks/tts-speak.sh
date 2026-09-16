@@ -36,6 +36,16 @@ HOOK_JSON=$(cat)
 MESSAGE=$(echo "$HOOK_JSON" | jq -r '.last_assistant_message // empty' 2>/dev/null)
 [[ -z "$MESSAGE" ]] && exit 0
 
+# "Read that to me" already played the content through scripts/tts-speak.sh.
+# Claude's reply about having read it would be spoken on top, so stay silent
+# for a few seconds after an on-demand read finishes.
+ON_DEMAND_MARKER="${CLAUDE_TTS_ON_DEMAND_MARKER:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-tts/last-on-demand}"
+ON_DEMAND_QUIET_SECS="${TTS_ON_DEMAND_QUIET_SECS:-15}"
+if [[ -f "$ON_DEMAND_MARKER" ]]; then
+    MARKER_AGE=$(( $(date +%s) - $(stat -f %m "$ON_DEMAND_MARKER" 2>/dev/null || stat -c %Y "$ON_DEMAND_MARKER" 2>/dev/null || echo 0) ))
+    [[ "$MARKER_AGE" -lt "$ON_DEMAND_QUIET_SECS" ]] && exit 0
+fi
+
 # Daemon down: silent exit, never block Claude.
 curl -s --max-time 1 "$KOKORO_URL/health" >/dev/null 2>&1 || exit 0
 
