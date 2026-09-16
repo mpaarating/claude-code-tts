@@ -205,7 +205,7 @@ When Claude exits plan mode and presents a plan for approval, the plan is automa
 
 **Preprocessing** — before text reaches Kokoro, it passes through a pipeline that:
 - Strips code blocks, inline code, URLs, file paths, markdown formatting
-- Expands acronyms (API → "A P I", JSON → "jason", kubectl → "kube control")
+- Expands acronyms (API → "eh P I", JSON → "jason", kubectl → "kube control")
 - Expands units (15ms → "15 milliseconds", 200MB → "200 megabytes")
 - Splits camelCase and snake_case identifiers
 - Verbalizes operators (=> → "arrow", && → "and")
@@ -231,28 +231,53 @@ Set in the launchd plist, systemd service, or your shell:
 
 ### Custom pronunciations
 
-Edit `~/.local/share/claude-code-tts/pronunciation.json` to change how terms are spoken:
+Two files control how terms are spoken, both next to the server in `~/.local/share/claude-code-tts/`:
+
+- `pronunciation.json` is the shared table that ships with the repo. The installer refreshes it on every run, so don't edit it in place; change `server/pronunciation.json` in the repo instead (and keep it in sync with the built-in defaults in `preprocess.py`; a test enforces this).
+- `pronunciation.local.json` is yours. The installer creates it empty and never touches it again. Anything in it is merged on top of the shared table: dict keys override, lists append. Put team names, internal services, and ticket-prefix quirks here.
 
 ```json
 {
   "pronunciation": {
-    "API": "A P I",
-    "SQL": "sequel",
-    "GIF": "jiff",
+    "proofapi": "proof eh P I",
     "your-internal-tool": "your tool name"
   },
-  "units": {
-    "ms": "milliseconds",
-    "req": "requests"
-  },
-  "symbols": [
-    ["=>", " arrow "],
-    ["&&", " and "]
-  ]
+  "acronym_words": ["SCARS"]
 }
 ```
 
-Restart the daemon after editing. The server falls back to built-in defaults for any keys not in your config.
+Supported sections: `pronunciation` (exact tokens, case-sensitive), `units` (`ms` -> `milliseconds`), `symbols` (ordered `[from, to]` pairs), `abbreviations` (`e.g.` -> `for example`), `acronym_words` (all-caps tokens to read as words), `tone_voices`, `agent_voices`.
+
+Restart the daemon after editing either file.
+
+#### What the preprocessor does on its own
+
+Beyond the table, `preprocess.py` rewrites the patterns espeak gets wrong:
+
+| Written | Spoken |
+|---------|--------|
+| `SFT-1141`, `!249`, `#12` | S F T eleven forty-one, M R two forty-nine, number twelve |
+| `#wg-software-factory` | the wg software factory channel |
+| `9/15`, `2026-09-16` | September 15th (year added only when it isn't this year) |
+| `9:44pm`, `1:1` | nine forty-four P M, one on one |
+| `EOD`, `DRI`, `PTO` | spelled out: any 2-5 letter all-caps token that isn't in the system dictionary |
+| `` `glab mr view 252` `` | spoken (short inline code is kept); long or path-like inline code is dropped |
+| `~/.claude/hooks/x.sh:12` | x dot sh |
+| `e.g.`, `3.13`, `~2hrs`, em dash | for example, three point thirteen, about two hours, a comma pause |
+
+A standalone letter A is emitted as "eh" because espeak otherwise reads it as the article.
+
+#### Checking what will be said
+
+```bash
+~/.claude/scripts/tts-speak.sh --dry-run "Merge MR !249 for SFT-910 by EOD"
+# would_speak: true  tone: none
+# Merge M R 2 49 for S F T 9 10 by E O D
+
+~/.claude/scripts/tts-speak.sh --dry-run --summary "$(cat response.md)"   # through the auto-speak summarizer
+```
+
+The same data is available from the daemon directly: `POST /preprocess` with `{"text": "...", "mode": "summary"}`.
 
 ### Voices
 

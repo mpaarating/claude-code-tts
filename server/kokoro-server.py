@@ -106,6 +106,7 @@ class TTSHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
         self.send_header("Content-Length", str(len(wav_bytes)))
+        self.send_header("X-TTS-Duration", f"{len(samples) / sample_rate:.3f}")
         if tone:
             self.send_header("X-TTS-Tone", tone)
         self.end_headers()
@@ -123,8 +124,30 @@ class TTSHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/speak":
             self._handle_speak()
+        elif self.path == "/preprocess":
+            self._handle_preprocess()
         else:
             self._send_error(404)
+
+    def _handle_preprocess(self):
+        """Return the text exactly as it would be handed to the model, without
+        generating audio. Backs `tts-speak.sh --dry-run` so a bad pronunciation
+        can be traced to either preprocessing or the model itself."""
+        data, text = self._parse_body()
+        if not text:
+            return self._send_error(400)
+        mode = data.get("mode")
+        spoken = summarize(text) if mode == "summary" else preprocess(text)
+        body = {
+            "text": spoken,
+            "mode": mode or "full",
+            "tone": classify_tone(text),
+            "would_speak": bool(spoken) and (mode != "summary" or should_speak(text)),
+        }
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
 
     def _handle_speak(self):
         """Smart speak handler — short text gets a single generation,
@@ -170,6 +193,11 @@ class TTSHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             text = summarize(text)
+            if not text:
+                # e.g. a bare link that preprocesses to just "U R L"
+                self.send_response(204)
+                self.end_headers()
+                return
         else:
             text = preprocess(text)
 

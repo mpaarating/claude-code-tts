@@ -1,7 +1,8 @@
 """Tests for the TTS preprocessing pipeline."""
 
-import sys
 import os
+import re
+import sys
 
 # Add server/ to path so we can import preprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
@@ -15,7 +16,7 @@ from preprocess import classify_tone, preprocess, should_speak, split_sentences,
 
 class TestAcronyms:
     def test_api(self):
-        assert "A P I" in preprocess("The API is down")
+        assert "eh P I" in preprocess("The API is down")
 
     def test_cli(self):
         assert "C L I" in preprocess("Use the CLI tool")
@@ -82,12 +83,32 @@ class TestCodeStripping:
         assert "print" not in result
         assert "it" in result
 
-    def test_inline_code_removed(self):
+    def test_inline_identifier_is_spoken_split(self):
         text = "The `fetchUser` function returns a promise."
         result = preprocess(text)
-        assert "fetchUser" not in result
-        assert "fetch User" not in result
-        assert "function" in result
+        assert "fetch User function" in result
+
+    def test_inline_command_is_spoken(self):
+        assert "glab M R view 252" in preprocess("Run `glab mr view 252` first")
+
+    def test_inline_snake_case_flag_is_spoken(self):
+        result = preprocess("The only codebase with `auto_approval_enabled` was flipped off")
+        assert "with auto approval enabled was" in result
+
+    def test_inline_path_keeps_filename_only(self):
+        result = preprocess("Edit `~/.claude/hooks/tts-speak.sh:12` next")
+        assert "tts-speak dot sh" in result
+        assert "claude" not in result
+
+    def test_inline_code_with_braces_is_dropped(self):
+        assert preprocess("Pass `{a: 1}` here") == "Pass here"
+
+    def test_inline_code_longer_than_limit_is_dropped(self):
+        long_code = "x" * 41
+        assert preprocess(f"Use `{long_code}` here") == "Use here"
+
+    def test_inline_flag_loses_leading_dashes(self):
+        assert "dry-run" in preprocess("Add `--dry-run` to it")
 
     def test_multiple_code_blocks(self):
         text = "First:\n```\ncode1\n```\nMiddle.\n```\ncode2\n```\nEnd."
@@ -459,5 +480,257 @@ class TestSummarize:
     def test_preprocesses_before_summarizing(self):
         text = "The API uses JWT tokens. The CLI sends JSON. Third sentence."
         result = summarize(text)
-        assert "A P I" in result
+        assert "eh P I" in result
         assert "J W T" in result
+
+
+# ---------------------------------------------------------------------------
+# preprocess: links vs URLs ordering
+# ---------------------------------------------------------------------------
+
+class TestLinksBeforeUrls:
+    def test_link_text_kept_when_followed_by_bare_url(self):
+        result = preprocess("See [SFT-910](https://x.y/z) and https://x.y/w")
+        assert result == "See S F T 9 10 and U R L"
+
+    def test_image_alt_text_kept(self):
+        assert preprocess("Shot: ![the diff](https://x.y/a.png) done") == "Shot: the diff done"
+
+    def test_autolink_angle_brackets(self):
+        assert preprocess("See <https://a.b/c> now") == "See U R L now"
+
+    def test_html_tags_stripped(self):
+        assert preprocess("<details><summary>Notes here</summary></details>") == "Notes here"
+
+
+# ---------------------------------------------------------------------------
+# preprocess: paths
+# ---------------------------------------------------------------------------
+
+class TestPaths:
+    def test_dotfile_directory_keeps_name_without_dot(self):
+        assert preprocess("Config lives in ~/.claude today") == "Config lives in claude today"
+
+    def test_line_number_suffix_dropped(self):
+        assert preprocess("Look at /src/app/main.ts:40:2 please") == "Look at main dot ts please"
+
+    def test_relative_path_with_two_slashes(self):
+        assert "Auth dot tsx" in preprocess("Open src/components/Auth.tsx")
+
+    def test_slash_between_words_is_not_a_path(self):
+        result = preprocess("Pick MR/PR and/or both")
+        assert "M R/P R" in result
+        assert "and/or" in result
+
+
+# ---------------------------------------------------------------------------
+# preprocess: tickets, merge requests, issues, channels
+# ---------------------------------------------------------------------------
+
+class TestWorkRefs:
+    def test_ticket_id_spelled_with_paired_digits(self):
+        assert preprocess("Ship SFT-1141 next") == "Ship S F T 11 41 next"
+
+    def test_three_digit_ticket_reads_as_nine_ten(self):
+        assert preprocess("SFT-910") == "S F T 9 10"
+
+    def test_round_hundred_ticket_number_left_whole(self):
+        assert preprocess("AD-100") == "eh D 100"
+
+    def test_bang_number_is_a_merge_request(self):
+        assert preprocess("Merge !249 today") == "Merge M R 2 49 today"
+
+    def test_mr_prefix_plus_bang_not_doubled(self):
+        assert preprocess("proofui MR !92") == "proofui M R 92"
+
+    def test_hash_number_is_an_issue_number(self):
+        assert preprocess("Closes #12") == "Closes number 12"
+
+    def test_slack_channel_read_as_words(self):
+        result = preprocess("Posted in #wg-software-factory-change")
+        assert result == "Posted in the wg software factory change channel"
+
+    def test_c_sharp_untouched(self):
+        assert "C#" in preprocess("Some C# code")
+
+    def test_lowercase_mr_is_not_mister(self):
+        assert preprocess("the mr is open") == "the M R is open"
+
+
+# ---------------------------------------------------------------------------
+# preprocess: dates and times
+# ---------------------------------------------------------------------------
+
+class TestDatesAndTimes:
+    def test_iso_date_this_year_has_no_year(self):
+        import datetime
+        year = datetime.date.today().year
+        assert preprocess(f"On {year}-09-16 we shipped") == "On September 16th we shipped"
+
+    def test_iso_date_other_year_keeps_year(self):
+        assert preprocess("Since 2019-12-01") == "Since December 1st 2019"
+
+    def test_us_slash_date(self):
+        assert preprocess("As of 9/15 it is off") == "As of September 15th it is off"
+
+    def test_us_slash_date_with_two_digit_year(self):
+        import datetime
+        year = datetime.date.today().year
+        assert preprocess(f"on 9/15/{year % 100}") == "on September 15th"
+
+    def test_invalid_slash_date_left_alone(self):
+        assert "13/45" in preprocess("ratio 13/45")
+
+    def test_ordinal_suffixes(self):
+        assert preprocess("1/1 1/2 1/3 1/11 1/21") == "January 1st January 2nd January 3rd January 11th January 21st"
+
+    def test_clock_time_with_pm(self):
+        assert preprocess("at 9:44pm ET") == "at 9 44 P M E T"
+
+    def test_clock_time_on_the_hour_drops_minutes(self):
+        assert preprocess("at 10:00am") == "at 10 eh M"
+
+    def test_bare_hour_with_meridiem(self):
+        assert preprocess("meet at 4pm") == "meet at 4 P M"
+
+    def test_one_on_one_meeting(self):
+        assert preprocess("1:1 with Kyle") == "one on one with Kyle"
+
+    def test_one_on_ones_plural_not_a_unit(self):
+        assert preprocess("weekly 1:1s") == "weekly one on ones"
+
+    def test_time_without_meridiem(self):
+        assert preprocess("ran 1:30 long") == "ran 1 30 long"
+
+
+# ---------------------------------------------------------------------------
+# preprocess: numbers, units, abbreviations, dashes
+# ---------------------------------------------------------------------------
+
+class TestNumbersAndSymbols:
+    def test_hours_unit_plural(self):
+        assert preprocess("took 2hrs") == "took 2 hours"
+
+    def test_approximate_tilde(self):
+        assert preprocess("~2hrs left") == "about 2 hours left"
+
+    def test_minutes_plural(self):
+        assert preprocess("3 mins") == "3 minutes"
+
+    def test_decimal_point_spoken(self):
+        assert preprocess("Python 3.13") == "Python 3 point 13"
+
+    def test_version_prefix_still_uses_dot(self):
+        assert preprocess("v2.1.3") == "version 2 dot 1 dot 3"
+
+    def test_eg_expanded(self):
+        assert preprocess("e.g. the MR") == "for example the M R"
+
+    def test_ie_expanded(self):
+        assert preprocess("i.e. MRs") == "that is M R s"
+
+    def test_vs_expanded(self):
+        assert preprocess("this vs. that") == "this versus that"
+
+    def test_em_dash_becomes_comma(self):
+        assert preprocess("Kyle \u2014 and Lauren") == "Kyle, and Lauren"
+
+    def test_spaced_hyphen_becomes_comma(self):
+        assert preprocess("fast - and safe") == "fast, and safe"
+
+    def test_ampersand(self):
+        assert preprocess("R&D team") == "R and D team"
+
+    def test_emoji_shortcode_removed(self):
+        assert preprocess(":tada: shipped it") == "shipped it"
+
+    def test_colon_separated_numbers_are_not_a_shortcode(self):
+        assert preprocess("main.ts:40:2 please") == "main dot ts please"
+
+    def test_no_space_before_punctuation(self):
+        assert preprocess("Use `{x}` , then stop .") == "Use, then stop."
+
+
+# ---------------------------------------------------------------------------
+# preprocess: unknown acronyms
+# ---------------------------------------------------------------------------
+
+class TestAcronymDefault:
+    def test_unknown_all_caps_is_spelled(self):
+        assert preprocess("EOD wrap") == "E O D wrap"
+
+    def test_unknown_acronym_plural(self):
+        assert preprocess("Q4 OKRs") == "Q4 O K R s"
+
+    def test_dictionary_word_in_caps_stays_a_word(self):
+        assert preprocess("NOT this one, the NEXT step") == "NOT this one, the NEXT step"
+
+    def test_plural_dictionary_word_stays_a_word(self):
+        assert preprocess("SCARS") == "SCARS"
+
+    def test_allowlisted_acronym_stays_a_word(self):
+        assert preprocess("WIP branch") == "WIP branch"
+
+    def test_dictionary_words_that_are_really_acronyms_are_mapped(self):
+        assert preprocess("ETA for the US") == "E T eh for the U S"
+
+    def test_alphanumeric_code_spelled(self):
+        assert preprocess("IC4 level") == "I C 4 level"
+
+    def test_alphanumeric_word_kept(self):
+        assert preprocess("ARM64 chips") == "ARM64 chips"
+
+    def test_letter_a_uses_letter_sound(self):
+        assert preprocess("API") == "eh P I"
+
+    def test_no_mapped_value_ends_in_bare_letter_a(self):
+        """A trailing " A" is read as the article "uh" by espeak; use "eh"."""
+        import preprocess as P
+        offenders = [k for k, v in P.PRONUNCIATION.items() if re.search(r"\bA\b", v)]
+        assert offenders == []
+
+    def test_six_letter_caps_word_untouched(self):
+        assert preprocess("IMPORTANT") == "IMPORTANT"
+
+    def test_split_identifier_exposes_mapped_term(self):
+        assert preprocess("parseJSON") == "parse jason"
+
+
+# ---------------------------------------------------------------------------
+# config: local overlay merging and json/builtin parity
+# ---------------------------------------------------------------------------
+
+class TestConfig:
+    def test_overlay_dict_merges_per_key(self):
+        from preprocess import merge_config
+        merged = merge_config({"pronunciation": {"A": "a", "B": "b"}}, {"pronunciation": {"B": "bee", "C": "c"}})
+        assert merged["pronunciation"] == {"A": "a", "B": "bee", "C": "c"}
+
+    def test_overlay_list_appends_without_duplicates(self):
+        from preprocess import merge_config
+        merged = merge_config({"acronym_words": ["WIP"]}, {"acronym_words": ["WIP", "SCARS"]})
+        assert merged["acronym_words"] == ["WIP", "SCARS"]
+
+    def test_overlay_scalar_replaces(self):
+        from preprocess import merge_config
+        assert merge_config({"x": 1}, {"x": 2}) == {"x": 2}
+
+    def test_shipped_json_matches_builtins(self):
+        """pronunciation.json replaces the built-ins wholesale, so the two must not drift."""
+        import json
+        import preprocess as P
+        with open(os.path.join(os.path.dirname(P.__file__), "pronunciation.json")) as f:
+            shipped = json.load(f)
+        assert shipped["pronunciation"] == P._BUILTIN_PRONUNCIATION
+        assert shipped["units"] == P._BUILTIN_UNITS
+        assert [tuple(s) for s in shipped["symbols"]] == P._BUILTIN_SYMBOLS
+        assert shipped["abbreviations"] == P._BUILTIN_ABBREVIATIONS
+        assert shipped["acronym_words"] == P._BUILTIN_ACRONYM_WORDS
+
+
+class TestSummarizeGate:
+    def test_bare_url_message_is_not_spoken(self):
+        assert summarize("https://gitlab.com/zapier/proofapi/-/merge_requests/252") == ""
+
+    def test_short_real_sentence_still_spoken(self):
+        assert summarize("Short text here.") == "Short text here."

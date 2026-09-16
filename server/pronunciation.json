@@ -1,7 +1,7 @@
 {
   "pronunciation": {
-    "API": "A P I",
-    "APIs": "A P I s",
+    "API": "eh P I",
+    "APIs": "eh P I s",
     "CLI": "C L I",
     "CPU": "C P U",
     "GPU": "G P U",
@@ -37,7 +37,7 @@
     "DNS": "D N S",
     "HTTP": "H T T P",
     "HTTPS": "H T T P S",
-    "AWS": "A W S",
+    "AWS": "eh W S",
     "GCP": "G C P",
     "CI": "C I",
     "CD": "C D",
@@ -45,8 +45,21 @@
     "PRs": "P R s",
     "MR": "M R",
     "MRs": "M R s",
+    "mr": "M R",
+    "mrs": "M R s",
+    "US": "U S",
+    "AM": "eh M",
+    "ETA": "E T eh",
     "OAuth": "oh auth",
     "GraphQL": "graph Q L",
+    "PostgreSQL": "postgres sequel",
+    "Redis": "red iss",
+    "SaaS": "sass",
+    "iOS": "I O S",
+    "macOS": "mac O S",
+    "k8s": "kubernetes",
+    "a11y": "accessibility",
+    "i18n": "internationalization",
     "async": "a-sink",
     "stdout": "standard out",
     "stderr": "standard error",
@@ -58,13 +71,21 @@
     "regex": "reg ex",
     "enum": "ee num",
     "kwargs": "keyword args",
-    "vite": "veet"
+    "vite": "veet",
+    "venv": "V env",
+    "npx": "N P X",
+    "tmux": "T mux",
+    "ffplay": "F F play"
   },
   "units": {
     "ms": "milliseconds",
     "s": "seconds",
+    "sec": "seconds",
+    "secs": "seconds",
     "min": "minutes",
+    "mins": "minutes",
     "hr": "hours",
+    "hrs": "hours",
     "KB": "kilobytes",
     "MB": "megabytes",
     "GB": "gigabytes",
@@ -81,17 +102,97 @@
     "QPS": "queries per second"
   },
   "symbols": [
-    ["=>", " arrow "],
-    ["->", " arrow "],
-    ["!==", " not equal to "],
-    ["!=", " not equal to "],
-    ["===", " equals "],
-    ["==", " equals "],
-    [">=", " greater than or equal to "],
-    ["<=", " less than or equal to "],
-    ["&&", " and "],
-    ["||", " or "],
-    ["::", " "],
-    ["...", " "]
+    [
+      "=>",
+      " arrow "
+    ],
+    [
+      "->",
+      " arrow "
+    ],
+    [
+      "!==",
+      " not equal to "
+    ],
+    [
+      "!=",
+      " not equal to "
+    ],
+    [
+      "===",
+      " equals "
+    ],
+    [
+      "==",
+      " equals "
+    ],
+    [
+      ">=",
+      " greater than or equal to "
+    ],
+    [
+      "<=",
+      " less than or equal to "
+    ],
+    [
+      "&&",
+      " and "
+    ],
+    [
+      "||",
+      " or "
+    ],
+    [
+      "&",
+      " and "
+    ],
+    [
+      "—",
+      ", "
+    ],
+    [
+      "–",
+      ", "
+    ],
+    [
+      "::",
+      " "
+    ],
+    [
+      "…",
+      " "
+    ],
+    [
+      "...",
+      " "
+    ]
+  ],
+  "abbreviations": {
+    "e.g.": "for example",
+    "i.e.": "that is",
+    "etc.": "et cetera",
+    "vs.": "versus",
+    "approx.": "approximately",
+    "w/o": "without",
+    "w/": "with"
+  },
+  "acronym_words": [
+    "WIP",
+    "NASA",
+    "GIF",
+    "SAML",
+    "CRUD",
+    "ACID",
+    "OWASP",
+    "RAG",
+    "SOC",
+    "YOLO",
+    "FOMO",
+    "LGBT",
+    "GUI",
+    "JSON",
+    "YAML",
+    "REST",
+    "SCRUM"
   ]
 }

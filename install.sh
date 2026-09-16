@@ -122,11 +122,12 @@ fi
 cp "$REPO_DIR/server/kokoro-server.py" "$INSTALL_DIR/kokoro-server.py"
 cp "$REPO_DIR/server/preprocess.py" "$INSTALL_DIR/preprocess.py"
 cp "$REPO_DIR/server/mcp-server.py" "$INSTALL_DIR/mcp-server.py"
-if [[ -f "$REPO_DIR/server/pronunciation.json" ]]; then
-    # Only copy if user hasn't customized their own
-    if [[ ! -f "$INSTALL_DIR/pronunciation.json" ]]; then
-        cp "$REPO_DIR/server/pronunciation.json" "$INSTALL_DIR/pronunciation.json"
-    fi
+# pronunciation.json is the shared table and is always refreshed. Machine-
+# specific terms belong in pronunciation.local.json, which the installer
+# never writes or overwrites.
+cp "$REPO_DIR/server/pronunciation.json" "$INSTALL_DIR/pronunciation.json"
+if [[ ! -f "$INSTALL_DIR/pronunciation.local.json" ]]; then
+    printf '{\n  "pronunciation": {},\n  "acronym_words": []\n}\n' > "$INSTALL_DIR/pronunciation.local.json"
 fi
 echo "  Server installed."
 
