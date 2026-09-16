@@ -9,12 +9,20 @@
 MAX_PLAN_LINES=60
 MAX_PLAN_CHARS=2000
 
+CONFIG_FILE="${CLAUDE_TTS_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-code-tts/env}"
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
 
 HOOK_JSON=$(cat)
 TOOL_NAME=$(echo "$HOOK_JSON" | jq -r '.tool_name // empty' 2>/dev/null)
 
 [[ "$TOOL_NAME" != "ExitPlanMode" ]] && exit 0
+
+# Respect the voice on/off state written by voice.sh (env never reaches hooks).
+STATE_FILE="${CLAUDE_TTS_STATE_FILE:-$HOME/.local/state/claude-tts/state}"
+if [[ -f "$STATE_FILE" ]]; then CLAUDE_TTS=$(cat "$STATE_FILE"); else CLAUDE_TTS="${CLAUDE_TTS:-off}"; fi
+[[ "$CLAUDE_TTS" == "off" || "$CLAUDE_TTS" == "0" ]] && exit 0
 
 # Check daemon is running
 curl -s --max-time 1 "$KOKORO_URL/health" >/dev/null 2>&1 || exit 0
@@ -37,7 +45,7 @@ SPEED="${KOKORO_SPEED:-1.0}"
 VOLUME="${KOKORO_VOLUME:-100}"
 
 (
-    curl -s -X POST "$KOKORO_URL/speak" \
+    curl -s -N -X POST "$KOKORO_URL/speak" \
         -H "Content-Type: application/json" \
         -d "$(jq -n --arg text "$TEXT" --argjson speed "$SPEED" '{text: $text, speed: $speed}')" \
         --max-time 120 \

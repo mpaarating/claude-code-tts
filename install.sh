@@ -143,7 +143,8 @@ cp "$REPO_DIR/scripts/tts-speak.sh" "$SCRIPTS_DIR/tts-speak.sh"
 cp "$REPO_DIR/scripts/tts-stop.sh" "$SCRIPTS_DIR/tts-stop.sh"
 cp "$REPO_DIR/scripts/tts-chime.sh" "$SCRIPTS_DIR/tts-chime.sh"
 cp "$REPO_DIR/scripts/tts-log.sh" "$SCRIPTS_DIR/tts-log.sh"
-chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh"
+cp "$REPO_DIR/scripts/voice.sh" "$SCRIPTS_DIR/voice.sh"
+chmod +x "$HOOKS_DIR/tts-speak.sh" "$HOOKS_DIR/tts-plan-reader.sh" "$HOOKS_DIR/tts-workflow.sh" "$SCRIPTS_DIR/tts-speak.sh" "$SCRIPTS_DIR/tts-stop.sh" "$SCRIPTS_DIR/tts-chime.sh" "$SCRIPTS_DIR/tts-log.sh" "$SCRIPTS_DIR/voice.sh"
 echo "  Hooks and scripts installed."
 
 # --- Create daemon (platform-specific) ---
@@ -335,10 +336,10 @@ if [[ -f "$CLAUDE_MD" ]] && ! grep -q "Voice Output" "$CLAUDE_MD"; then
 ```
 The script handles markdown stripping, chunking, and seamless playback. Runs locally, free.
 
-**Session voice toggle**: "voice on" / "voice off":
+**Session voice toggle**: "voice on" / "voice off" (a state file, not an env var; exports never reach hooks):
 ```bash
-export CLAUDE_TTS=auto   # auto-speak conversational responses
-export CLAUDE_TTS=off    # back to silent
+~/.claude/scripts/voice.sh on    # auto-speak conversational responses
+~/.claude/scripts/voice.sh off   # back to silent
 ```
 INSTRUCTIONS
 fi
@@ -394,9 +395,10 @@ echo "=== Installation complete ==="
 echo ""
 echo "Usage:"
 echo "  On-demand:  Tell Claude 'read that to me'"
-echo "  Auto mode:  Tell Claude 'voice on' (or set CLAUDE_TTS=auto)"
+echo "  Auto mode:  Tell Claude 'voice on' (or run ~/.claude/scripts/voice.sh on)"
 echo "  Plan mode:  Plans are automatically read aloud on approval prompt"
-echo "  Stop:       Tell Claude 'voice off' (or set CLAUDE_TTS=off)"
+echo "  Stop:       Tell Claude 'voice off' (or run ~/.claude/scripts/voice.sh off)"
+echo "  Settings:   ~/.config/claude-code-tts/env (KOKORO_SPEED, KOKORO_VOLUME, TTS_CHIME_TONES)"
 echo ""
 if [[ "$PLATFORM" == "Darwin" ]]; then
     echo "Daemon: launchctl start/stop com.$(whoami).kokoro-tts"

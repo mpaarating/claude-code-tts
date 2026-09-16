@@ -22,6 +22,11 @@ SUBSTANCE_THRESHOLD = 80
 # it's noise: a bare link becomes just "U R L".
 MIN_SUMMARY_WORDS = 2
 
+# Lines that open a block the summary should not read into: list items,
+# table rows, headings, fences, and horizontal rules.
+_BLOCK_LINE = re.compile(r'^\s*(?:[-*+]\s|\d+[.)]\s|\||#{1,6}\s|```|---+\s*$)')
+_HEADING_LINE = re.compile(r'^\s*#{1,6}\s')
+
 # Inline code is spoken when it's a short identifier or command ("fetchUser",
 # "glab mr view 252"). Anything longer, or containing path/operator characters,
 # is identifier soup and gets dropped instead.
@@ -455,6 +460,10 @@ def preprocess(text):
     # 4. Replace URLs with "URL" — reading full URLs aloud is never useful
     text = re.sub(r'(?:https?://|www\.)\S+', 'URL', text)
 
+    #    Commit hashes are noise when spoken ("squash-merged as de2beaa"):
+    #    7-40 hex chars containing both a digit and a letter.
+    text = re.sub(r'\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b', '', text)
+
     # 5. Clean markdown / HTML formatting
     text = re.sub(r'<[^>\n]+>', '', text)  # inline HTML tags (<details>, <br>)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headers
@@ -566,7 +575,8 @@ def preprocess(text):
         '', text,
     )
 
-    # 20. Normalize whitespace
+    # 20. Normalize whitespace. Dropped inline code or hashes can leave "()".
+    text = re.sub(r'\(\s*\)', '', text)
     text = re.sub(r'\n{2,}', '. ', text)  # paragraph breaks → sentence boundary
     text = re.sub(r'\n', ' ', text)
     text = re.sub(r'\s{2,}', ' ', text)
@@ -686,16 +696,65 @@ def voice_for_agent(agent_type):
     return None, None
 
 
-def summarize(text):
-    """Produce a short spoken summary: preprocess, take first few sentences, cap length.
+def opening_paragraph(text):
+    """Return the first prose block of a markdown response.
 
-    Useful for auto-speak hooks that need a quick synopsis rather than
-    reading an entire response aloud. Returns "" when nothing worth hearing
-    survives preprocessing (a bare link becomes just "U R L").
+    Skips leading blank lines, headings, and fenced code, then collects lines
+    until a blank line or the start of a list, table, heading, fence, or rule.
+    A line ending in ":" introduces a list, so the block ends there too.
+    Returns "" when the response never reaches prose (e.g. it is one big list).
     """
-    cleaned = preprocess(text)
-    if not cleaned or len(re.findall(r"[A-Za-z]{3,}", cleaned)) < MIN_SUMMARY_WORDS:
+    lines = text.split("\n")
+    i = 0
+    # Skip preamble: blank lines, headings, fenced code blocks.
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith("```"):
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                i += 1
+            i += 1
+            continue
+        if not line.strip() or _HEADING_LINE.match(line):
+            i += 1
+            continue
+        break
+
+    block = []
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip() or _BLOCK_LINE.match(line):
+            break
+        block.append(line)
+        if line.rstrip().endswith(":"):
+            break
+        i += 1
+    return "\n".join(block)
+
+
+def _has_substance(cleaned):
+    return bool(cleaned) and len(re.findall(r"[A-Za-z]{3,}", cleaned)) >= MIN_SUMMARY_WORDS
+
+
+def summarize(text):
+    """Produce a short spoken summary: the opening paragraph, first few
+    sentences, capped in length.
+
+    Auto-speak hooks need a quick synopsis, not the whole response. The
+    summary stops at the end of the opening paragraph so list headers and
+    footers below it stay on screen, unspoken. Falls back to the whole
+    response when the opening has no prose (a response that is one big list).
+    Returns "" when nothing worth hearing survives preprocessing (a bare link
+    becomes just "U R L").
+    """
+    cleaned = preprocess(opening_paragraph(text))
+    if not _has_substance(cleaned):
+        cleaned = preprocess(text)
+    if not _has_substance(cleaned):
         return ""
+
+    # A list intro ("Here's where both stand:") should not end on a colon.
+    cleaned = re.sub(r':\s*$', '.', cleaned)
 
     # Split into sentences, take first N
     sentences = re.split(r'(?<=[.!?])\s+', cleaned)
