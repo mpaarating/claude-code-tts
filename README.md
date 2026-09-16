@@ -128,18 +128,21 @@ The script handles chunking and seamless playback. Runs locally, free.
 ~/.claude/scripts/tts-stop.sh
 \`\`\`
 
-**Session voice toggle**: "voice on" / "voice off":
+**Session voice toggle**: "voice on" / "voice off". The hooks read a state file,
+not an env var (hooks are children of the Claude process, so `export` never reaches them):
 \`\`\`bash
-export CLAUDE_TTS=auto   # auto-speak conversational responses
-export CLAUDE_TTS=off    # back to silent
+~/.claude/scripts/voice.sh on      # auto-speak conversational responses
+~/.claude/scripts/voice.sh off     # back to silent (also stops playback)
+~/.claude/scripts/voice.sh toggle
+~/.claude/scripts/voice.sh status
 \`\`\`
 
-**Speed/volume**: "speak slower", "speak faster", "louder", "quieter":
+**Speed/volume**: "speak slower", "speak faster", "louder", "quieter". Write to the
+settings file; hooks and scripts read it on every run:
 \`\`\`bash
-export KOKORO_SPEED=0.8   # slower (range: 0.5 to 2.0, default 1.0)
-export KOKORO_SPEED=1.3   # faster
-export KOKORO_VOLUME=60   # quieter (range: 0 to 100, default 100)
-export KOKORO_VOLUME=100  # full volume
+mkdir -p ~/.config/claude-code-tts
+echo 'KOKORO_SPEED=1.2' >> ~/.config/claude-code-tts/env    # 0.5 to 2.0, default 1.0
+echo 'KOKORO_VOLUME=60' >> ~/.config/claude-code-tts/env    # 0 to 100, default 100
 \`\`\`
 ```
 
@@ -177,6 +180,12 @@ Enable auto-speak for the current session:
 
 In auto mode, Claude speaks conversational responses and stays silent during code output. The "colleague in the room" model — speaks up when it matters, stays quiet when it doesn't.
 
+Only the opening paragraph is spoken (up to 3 sentences, 800 chars). Headings, lists, tables, and anything below the first blank line stay on screen, unspoken. Write the headline first and the detail below it, and the two surfaces line up.
+
+Questions, errors, and warnings get a short system chime before the speech so you can tell them apart without looking. Set `TTS_CHIME_TONES=""` in the settings file to turn chimes off, or list the tones you want (`question error warning completion`).
+
+A new response interrupts whatever is still playing. Newest wins.
+
 Disable:
 
 > "Voice off"
@@ -211,7 +220,7 @@ When Claude exits plan mode and presents a plan for approval, the plan is automa
 - Verbalizes operators (=> → "arrow", && → "and")
 - Strips emoji
 
-**Chunking** — long text is split on sentence boundaries (~500 chars per chunk), generated separately, then concatenated with 150ms breath pauses into a single seamless WAV stream.
+**Streaming** — text is split on sentence boundaries and synthesized one sentence at a time. The daemon sends a WAV header of unknown length and writes each sentence's PCM as soon as it is ready, with 150ms breath pauses between them. Playback starts after the first sentence (well under a second on Apple Silicon) instead of after the whole response. If playback is stopped, the closed pipe tells the daemon to stop synthesizing.
 
 **Playback** — audio streams directly from curl to ffplay via pipe. No temp files touch disk.
 
@@ -227,7 +236,12 @@ Set in the launchd plist, systemd service, or your shell:
 | `KOKORO_VOICE` | `af_heart` | Voice ID ([available voices](https://github.com/thewh1teagle/kokoro-onnx#voices)) |
 | `KOKORO_SPEED` | `1.0` | Speech speed (0.5 = slow, 2.0 = fast) |
 | `KOKORO_VOLUME` | `100` | Playback volume (0 = mute, 100 = full) |
-| `CLAUDE_TTS` | `off` | `off` (silent), `auto` (speak conversational responses), `on` (speak everything) |
+| `TTS_CHIME_TONES` | `question error warning` | Tones that play a chime before speech; empty for none |
+| `CLAUDE_TTS` | `off` | Fallback when no state file exists: `off` (silent), `auto` (speak conversational responses) |
+
+### Settings file
+
+Hooks cannot see variables you export in your shell after Claude starts, so `KOKORO_SPEED`, `KOKORO_VOLUME`, and `TTS_CHIME_TONES` are also read from `~/.config/claude-code-tts/env` (one `KEY=VALUE` per line) on every run. Voice on/off is separate: `voice.sh` writes `~/.local/state/claude-tts/state`, which the hooks check first.
 
 ### Custom pronunciations
 

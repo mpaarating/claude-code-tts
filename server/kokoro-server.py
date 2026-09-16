@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Kokoro TTS HTTP daemon — keeps model loaded, serves audio on demand."""
 
-import asyncio
-import io
 import json
 import os
+import re
 import signal
 import struct
 import sys
@@ -12,7 +11,6 @@ import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 import numpy as np
-import soundfile as sf
 
 # Import from sibling module. Works whether run from the repo (server/ dir)
 # or from an installed location (~/.local/share/kokoro-tts/) because both
@@ -22,11 +20,9 @@ from preprocess import (
     classify_tone,
     preprocess,
     should_speak,
-    split_sentences,
     summarize,
     voice_for_agent,
     voice_for_tone,
-    MAX_CHUNK_LEN,
     INTER_CHUNK_SILENCE_SECS,
 )
 
@@ -41,6 +37,13 @@ SPEED = float(os.environ.get("KOKORO_SPEED", "1.0"))
 LOG_DIR = os.environ.get("KOKORO_LOG_DIR", os.path.join(os.path.expanduser("~"), ".local", "share", "claude-code-tts", "logs"))
 LOG_FILE = os.path.join(LOG_DIR, "tts-history.jsonl")
 
+# Audio is streamed one sentence at a time so playback starts after the first
+# sentence is synthesized instead of after the whole response. Sentences
+# shorter than this are merged into the next one: "Done." is not worth its
+# own model pass.
+MIN_STREAM_CHUNK_CHARS = 40
+_SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+
 tts_model = None
 
 
@@ -54,8 +57,11 @@ def load_model():
     print(f"Kokoro model loaded. Listening on :{PORT}", flush=True)
 
 
-def _log_speech(text, voice, mode, tone, duration_ms):
-    """Append a record to the JSONL history log."""
+def _log_speech(text, voice, mode, tone, duration_ms, first_audio_ms=None, interrupted=False):
+    """Append a record to the JSONL history log.
+
+    duration_ms is total synthesis time; first_audio_ms is how long the
+    client waited before the first sentence started playing."""
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
         record = {
@@ -65,11 +71,55 @@ def _log_speech(text, voice, mode, tone, duration_ms):
             "mode": mode,
             "tone": tone,
             "duration_ms": duration_ms,
+            "first_audio_ms": first_audio_ms,
+            "interrupted": interrupted,
         }
         with open(LOG_FILE, "a") as f:
             f.write(json.dumps(record) + "\n")
     except Exception:
         pass  # logging should never break TTS
+
+
+def stream_chunks(text, min_chars=MIN_STREAM_CHUNK_CHARS):
+    """Split text into sentence-sized synthesis chunks for streaming.
+
+    Sentences shorter than min_chars are merged forward so tiny fragments
+    don't each cost a model pass, but the first chunk is kept as small as
+    possible because its synthesis time is the time to first audio."""
+    sentences = [s for s in _SENTENCE_END.split(text) if s.strip()]
+    chunks = []
+    current = ""
+    for sentence in sentences:
+        if current and len(current) < min_chars:
+            current = f"{current} {sentence}"
+        elif current:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = sentence
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def wav_header(sample_rate, channels=1, bits=16):
+    """RIFF/WAVE header for a PCM stream of unknown length.
+
+    0xFFFFFFFF in the size fields tells players (ffplay, ffmpeg) to read until
+    EOF, so the body can be written sentence by sentence as it is synthesized."""
+    block_align = channels * bits // 8
+    return (
+        b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVE"
+        + b"fmt " + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
+                                sample_rate * block_align, block_align, bits)
+        + b"data" + struct.pack("<I", 0xFFFFFFFF)
+    )
+
+
+def pcm16(samples):
+    """float32 [-1, 1] samples -> little-endian 16-bit PCM bytes."""
+    clipped = np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
+    return (clipped * 32767).astype("<i2").tobytes()
 
 
 class TTSHandler(BaseHTTPRequestHandler):
@@ -98,19 +148,6 @@ class TTSHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, AttributeError):
             return None, None
         return data, text
-
-    def _send_wav(self, samples, sample_rate, tone=None):
-        buf = io.BytesIO()
-        sf.write(buf, samples, sample_rate, format="WAV")
-        wav_bytes = buf.getvalue()
-        self.send_response(200)
-        self.send_header("Content-Type", "audio/wav")
-        self.send_header("Content-Length", str(len(wav_bytes)))
-        self.send_header("X-TTS-Duration", f"{len(samples) / sample_rate:.3f}")
-        if tone:
-            self.send_header("X-TTS-Tone", tone)
-        self.end_headers()
-        self.wfile.write(wav_bytes)
 
     def _send_error(self, code, error_message=""):
         self.send_response(code)
@@ -205,66 +242,47 @@ class TTSHandler(BaseHTTPRequestHandler):
             return self._send_error(400, "Nothing speakable after preprocessing")
 
         try:
-            t0 = time.monotonic()
-            if len(text) > MAX_CHUNK_LEN:
-                # Prefer streaming API for lower latency; fall back to sync chunking
-                try:
-                    self._generate_streamed(text, voice, speed, tone)
-                except (AttributeError, TypeError):
-                    self._generate_chunked(text, voice, speed, tone)
-            else:
-                samples, sample_rate = tts_model.create(text, voice=voice, speed=speed)
-                self._send_wav(samples, sample_rate, tone)
-            duration_ms = int((time.monotonic() - t0) * 1000)
-            _log_speech(text, voice, mode, tone, duration_ms)
+            self._stream_speech(text, voice, speed, mode, tone)
         except Exception as e:
             self._send_error(500, str(e))
 
-    def _generate_streamed(self, text, voice, speed, tone=None):
-        """Stream audio using Kokoro's async create_stream API.
+    def _stream_speech(self, text, voice, speed, mode, tone=None):
+        """Synthesize sentence by sentence and write each as PCM as soon as it
+        is ready. The client (curl piped into ffplay) starts playing after the
+        first sentence instead of after the whole response.
 
-        Sends a WAV header immediately, then writes PCM data as each
-        sentence is generated. Client starts playing after the first
-        chunk (~300ms) instead of waiting for the full response.
-        """
-        async def _collect_stream():
-            all_samples = []
-            sample_rate = None
-            async for samples, sr in tts_model.create_stream(text, voice=voice, speed=speed):
-                if sample_rate is None:
-                    sample_rate = sr
-                all_samples.append(samples)
-                silence = np.zeros(int(sr * INTER_CHUNK_SILENCE_SECS), dtype=samples.dtype)
-                all_samples.append(silence)
-            return all_samples, sample_rate
-
-        all_samples, sample_rate = asyncio.run(_collect_stream())
-
-        if not all_samples or sample_rate is None:
-            return self._send_error(400, "No speakable text")
-
-        combined = np.concatenate(all_samples)
-        self._send_wav(combined, sample_rate, tone)
-
-    def _generate_chunked(self, text, voice, speed, tone=None):
-        """Fallback: chunk text on sentence boundaries, generate each sequentially."""
-        chunks = split_sentences(text)
-        all_samples = []
-        sample_rate = None
-
-        for chunk in chunks:
-            if not chunk.strip():
-                continue
-            samples, sample_rate = tts_model.create(chunk.strip(), voice=voice, speed=speed)
-            all_samples.append(samples)
-            silence = np.zeros(int(sample_rate * INTER_CHUNK_SILENCE_SECS), dtype=samples.dtype)
-            all_samples.append(silence)
-
-        if not all_samples or sample_rate is None:
-            return self._send_error(400, "No speakable text")
-
-        combined = np.concatenate(all_samples)
-        self._send_wav(combined, sample_rate, tone)
+        If the client goes away mid-stream (playback interrupted), synthesis
+        stops at the next sentence instead of burning CPU on unheard audio."""
+        chunks = stream_chunks(text)
+        t0 = time.monotonic()
+        first_audio_ms = None
+        interrupted = False
+        try:
+            for i, chunk in enumerate(chunks):
+                samples, sample_rate = tts_model.create(chunk.strip(), voice=voice, speed=speed)
+                if i == 0:
+                    first_audio_ms = int((time.monotonic() - t0) * 1000)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "audio/wav")
+                    self.send_header("Connection", "close")
+                    if tone:
+                        self.send_header("X-TTS-Tone", tone)
+                    self.end_headers()
+                    self.wfile.write(wav_header(sample_rate))
+                else:
+                    self.wfile.write(bytes(int(sample_rate * INTER_CHUNK_SILENCE_SECS) * 2))
+                self.wfile.write(pcm16(samples))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            interrupted = True
+        except Exception:
+            # Headers already sent for a later chunk: nothing useful can be
+            # returned to the client, so end the stream where it is.
+            if first_audio_ms is None:
+                raise
+            interrupted = True
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        _log_speech(text, voice, mode, tone, duration_ms, first_audio_ms, interrupted)
 
 
 def main():
