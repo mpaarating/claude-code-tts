@@ -121,6 +121,7 @@ fi
 
 cp "$REPO_DIR/server/kokoro-server.py" "$INSTALL_DIR/kokoro-server.py"
 cp "$REPO_DIR/server/preprocess.py" "$INSTALL_DIR/preprocess.py"
+cp "$REPO_DIR/server/words-2to5.txt" "$INSTALL_DIR/words-2to5.txt"
 cp "$REPO_DIR/server/mcp-server.py" "$INSTALL_DIR/mcp-server.py"
 # pronunciation.json is the shared table and is always refreshed. Machine-
 # specific terms belong in pronunciation.local.json, which the installer

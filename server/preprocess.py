@@ -31,9 +31,15 @@ _UNSPEAKABLE_INLINE_CODE = re.compile(r'[\\{}<>|$=;`()\[\]]')
 # All-caps tokens in this length range that aren't dictionary words get spelled
 # out letter by letter ("EOD" -> "E O D"). espeak otherwise guesses a word
 # ("owd") and guesses differently depending on the surrounding text.
+# The bundled word list (2-5 letter words from BSD web2) comes first so the
+# result is the same on every machine; system dictionaries are a fallback.
 ACRONYM_MIN_LEN = 2
 ACRONYM_MAX_LEN = 5
-_DICTIONARY_PATHS = ("/usr/share/dict/words", "/usr/dict/words")
+_DICTIONARY_PATHS = (
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "words-2to5.txt"),
+    "/usr/share/dict/words",
+    "/usr/dict/words",
+)
 
 _MONTHS = (
     "January", "February", "March", "April", "May", "June",

@@ -715,6 +715,15 @@ class TestConfig:
         from preprocess import merge_config
         assert merge_config({"x": 1}, {"x": 2}) == {"x": 2}
 
+    def test_bundled_word_list_is_used(self):
+        """CI runners have no /usr/share/dict/words; the bundled list must carry the rule."""
+        import preprocess as P
+        assert P._DICTIONARY_PATHS[0].endswith("words-2to5.txt")
+        assert os.path.isfile(P._DICTIONARY_PATHS[0])
+        words = P._dictionary()
+        assert {"not", "next", "scar"} <= words
+        assert not {"eod", "okr", "et"} & words
+
     def test_shipped_json_matches_builtins(self):
         """pronunciation.json replaces the built-ins wholesale, so the two must not drift."""
         import json
