@@ -7,7 +7,7 @@ import sys
 # Add server/ to path so we can import preprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 
-from preprocess import classify_tone, preprocess, should_speak, split_sentences, summarize, voice_for_agent, voice_for_tone
+from preprocess import classify_tone, opening_paragraph, preprocess, should_speak, split_sentences, summarize, voice_for_agent, voice_for_tone
 
 
 # ---------------------------------------------------------------------------
@@ -743,3 +743,56 @@ class TestSummarizeGate:
 
     def test_short_real_sentence_still_spoken(self):
         assert summarize("Short text here.") == "Short text here."
+
+
+# ---------------------------------------------------------------------------
+# summarize: stops at the opening paragraph
+# ---------------------------------------------------------------------------
+
+class TestOpeningParagraph:
+    def test_stops_at_blank_line(self):
+        text = "The fix landed. Tests pass.\n\n**Coverage:** sources 6 OK\n- item"
+        assert opening_paragraph(text) == "The fix landed. Tests pass."
+
+    def test_stops_before_list_without_blank_line(self):
+        text = "Two things changed.\n- first\n- second"
+        assert opening_paragraph(text) == "Two things changed."
+
+    def test_colon_line_ends_the_block(self):
+        text = "Here's where both stand:\n- Memory, done.\n- Coverage: 6 OK"
+        assert opening_paragraph(text) == "Here's where both stand:"
+
+    def test_skips_leading_heading_and_code(self):
+        text = "## Summary\n\n```bash\nls\n```\nThat lists files.\n\nMore below."
+        assert opening_paragraph(text) == "That lists files."
+
+    def test_empty_when_response_is_only_a_list(self):
+        assert opening_paragraph("- one\n- two") == ""
+
+
+class TestSummarizeOpeningParagraph:
+    def test_does_not_read_into_list_below(self):
+        text = "Yes, the PR is merged. The daemon restarted cleanly.\n\nCoverage: sources 6 OK / 0 FAILED\n- item one"
+        assert summarize(text) == "Yes, the P R is merged. The daemon restarted cleanly."
+
+    def test_list_intro_loses_trailing_colon(self):
+        text = "Here's where both stand:\n- Memory, done.\n- Coverage: sources 6 OK"
+        assert summarize(text) == "Here's where both stand."
+
+    def test_falls_back_to_whole_text_when_no_opening_prose(self):
+        text = "- First item that is long enough to speak.\n- Second item here."
+        assert summarize(text) == "First item that is long enough to speak. Second item here."
+
+    def test_still_limited_to_three_sentences_within_paragraph(self):
+        assert summarize("One is here. Two is here. Three is here. Four is here.") == "One is here. Two is here. Three is here."
+
+
+class TestNoiseTokens:
+    def test_commit_hash_dropped(self):
+        assert preprocess("PR 19 squash-merged as de2beaa today.") == "P R 19 squash-merged as today."
+
+    def test_plain_words_and_numbers_kept(self):
+        assert preprocess("deadbeef 1234567 accede") == "deadbeef 1234567 accede"
+
+    def test_empty_parens_removed(self):
+        assert preprocess("merged via (`gh pr merge 19 --squash --delete-branch --admin`) cleanly") == "merged via cleanly"

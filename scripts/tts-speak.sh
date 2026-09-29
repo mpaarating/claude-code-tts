@@ -9,7 +9,14 @@
 #    or: tts-speak.sh --dry-run "text"   # print what would be spoken, no audio
 #    or: tts-speak.sh --dry-run --summary "text"   # same, through the auto-speak summarizer
 
+# Optional settings (KOKORO_SPEED, KOKORO_VOLUME), same file the hooks read.
+CONFIG_FILE="${CLAUDE_TTS_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-code-tts/env}"
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
+# Touched when an on-demand read finishes. The Stop hook stays silent for a
+# few seconds after it, so Claude's "read it aloud" reply is not spoken on top.
+ON_DEMAND_MARKER="${CLAUDE_TTS_ON_DEMAND_MARKER:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-tts/last-on-demand}"
 
 DRY_RUN=0
 MODE=""
@@ -52,10 +59,11 @@ echo "Speaking..."
 SPEED="${KOKORO_SPEED:-1.0}"
 VOLUME="${KOKORO_VOLUME:-100}"
 
-curl -s -X POST "$KOKORO_URL/speak" \
+curl -s -N -X POST "$KOKORO_URL/speak" \
     -H "Content-Type: application/json" \
     -d "$(jq -n --arg text "$TEXT" --argjson speed "$SPEED" '{text: $text, speed: $speed}')" \
     --max-time 120 \
     2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -volume "$VOLUME" -f wav -window_title claude-tts -i pipe:0 2>/dev/null
 
+mkdir -p "$(dirname "$ON_DEMAND_MARKER")" && touch "$ON_DEMAND_MARKER"
 echo "Done."

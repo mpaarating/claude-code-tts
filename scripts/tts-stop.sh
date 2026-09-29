@@ -9,6 +9,3 @@ if pkill -f "ffplay.*claude-tts" 2>/dev/null; then
 else
     echo "Nothing playing."
 fi
-
-# Clean up stale lock file
-rm -f /tmp/claude-tts.lock
