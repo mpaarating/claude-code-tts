@@ -88,6 +88,15 @@ Add to your `~/.claude/settings.json`:
           "timeout": 5
         }]
       }
+    ],
+    "Notification": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "~/.claude/hooks/tts-notify.sh",
+          "timeout": 5
+        }]
+      }
     ]
   }
 }
@@ -192,6 +201,14 @@ Disable:
 
 > "Mute"
 
+### Permission prompts and idle nudges
+
+When voice is on and Claude stops to ask permission for a tool, the Notification hook plays a chime and says which session needs you: "claude code tts: Claude needs your permission to use Bash". This is the case where speech earns its keep: you have walked away, the terminal is waiting, and nothing else would tell you.
+
+Idle nudges ("ai config is waiting on you", 60 s after Claude finishes) are off by default because they are noise when you are reading the screen. Opt in with `TTS_NOTIFY_TYPES="permission_prompt idle_prompt"` in the settings file.
+
+The Stop hook also stays quiet for 15 s after an on-demand "read that to me" finishes, so Claude's reply about having read it is not spoken on top (`TTS_ON_DEMAND_QUIET_SECS`).
+
 ### Plan reader
 
 When Claude exits plan mode and presents a plan for approval, the plan is automatically read aloud. This matters because the approval prompt only has accept/reject — you can't type "read that to me."
@@ -237,6 +254,8 @@ Set in the launchd plist, systemd service, or your shell:
 | `KOKORO_SPEED` | `1.0` | Speech speed (0.5 = slow, 2.0 = fast) |
 | `KOKORO_VOLUME` | `100` | Playback volume (0 = mute, 100 = full) |
 | `TTS_CHIME_TONES` | `question error warning` | Tones that play a chime before speech; empty for none |
+| `TTS_NOTIFY_TYPES` | `permission_prompt` | Notifications spoken by the Notification hook; add `idle_prompt` for idle nudges |
+| `TTS_ON_DEMAND_QUIET_SECS` | `15` | Stop hook stays silent this long after an on-demand read finishes |
 | `CLAUDE_TTS` | `off` | Fallback when no state file exists: `off` (silent), `auto` (speak conversational responses) |
 
 ### Settings file

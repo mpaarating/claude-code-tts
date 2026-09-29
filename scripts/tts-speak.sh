@@ -14,6 +14,9 @@ CONFIG_FILE="${CLAUDE_TTS_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-
 [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 
 KOKORO_URL="http://127.0.0.1:${KOKORO_PORT:-7723}"
+# Touched when an on-demand read finishes. The Stop hook stays silent for a
+# few seconds after it, so Claude's "read it aloud" reply is not spoken on top.
+ON_DEMAND_MARKER="${CLAUDE_TTS_ON_DEMAND_MARKER:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-tts/last-on-demand}"
 
 DRY_RUN=0
 MODE=""
@@ -62,4 +65,5 @@ curl -s -N -X POST "$KOKORO_URL/speak" \
     --max-time 120 \
     2>/dev/null | ffplay -nodisp -autoexit -loglevel quiet -volume "$VOLUME" -f wav -window_title claude-tts -i pipe:0 2>/dev/null
 
+mkdir -p "$(dirname "$ON_DEMAND_MARKER")" && touch "$ON_DEMAND_MARKER"
 echo "Done."
